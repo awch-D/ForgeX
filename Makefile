@@ -22,7 +22,10 @@ version: build
 # ============ 测试 ============
 test:
 	@echo "🧪 Running tests..."
-	@go test ./... -v -count=1
+	@for dir in forgex-core forgex-cli forgex-intent forgex-gear forgex-agent forgex-cognition forgex-llm forgex-mcp forgex-governance forgex-evolution; do \
+		echo "  → $$dir"; \
+		(cd $$dir && go test ./... -v -count=1); \
+	done
 	@echo "✅ All tests passed"
 
 # ============ 依赖 ============
