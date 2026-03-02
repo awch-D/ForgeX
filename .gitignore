@@ -23,6 +23,7 @@ Thumbs.db
 # Env
 .env
 .env.local
+forgex.yaml
 
 # Rust (Phase 4)
 forgex-sandbox/target/

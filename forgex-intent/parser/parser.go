@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	fxerr "github.com/awch-D/ForgeX/forgex-core/errors"
 	"github.com/awch-D/ForgeX/forgex-core/types"
@@ -24,7 +25,9 @@ type TaskAnalysis struct {
 
 var systemPrompt = `You are the ForgeX Intent Clarifier v3.
 Your job is to analyze a user's coding request and determine if you have enough information to generate code.
-You MUST ALWAYS respond in valid JSON matching this schema:
+You MUST ALWAYS respond in valid JSON only. Do NOT wrap your response in markdown code blocks.
+Do NOT use triple backticks. Output raw JSON directly.
+The JSON must match this schema:
 {
   "status": "string (strictly 'ready' or 'need_info')",
   "core_intent": "string (brief summary of what needs to be built)",
@@ -40,6 +43,27 @@ Guidelines:
 - If the user provides a very general request like "build a web app", status=need_info, and ask about framework, DB, auth.
 - If the request is specific enough to start coding (e.g. "Create a Go CLI tool to ping Google"), status=ready.
 `
+
+// extractJSON strips markdown code fences and extracts pure JSON from LLM output.
+func extractJSON(raw string) string {
+	s := strings.TrimSpace(raw)
+
+	// Strip ```json ... ``` or ``` ... ```
+	if strings.HasPrefix(s, "```") {
+		// Find end of first line (the opening fence)
+		idx := strings.Index(s, "\n")
+		if idx != -1 {
+			s = s[idx+1:]
+		}
+		// Strip trailing ```
+		if lastIdx := strings.LastIndex(s, "```"); lastIdx != -1 {
+			s = s[:lastIdx]
+		}
+		s = strings.TrimSpace(s)
+	}
+
+	return s
+}
 
 // Parse parses the current conversation history to produce a TaskAnalysis.
 func Parse(ctx context.Context, llm provider.Provider, history []provider.Message) (*TaskAnalysis, error) {
@@ -58,10 +82,13 @@ func Parse(ctx context.Context, llm provider.Provider, history []provider.Messag
 		return nil, fxerr.Wrap(fxerr.ErrLLMBadResponse, "intent parsing failed", err)
 	}
 
+	cleanJSON := extractJSON(resp.Content)
+
 	var analysis TaskAnalysis
-	if err := json.Unmarshal([]byte(resp.Content), &analysis); err != nil {
-		return nil, fxerr.Wrap(fxerr.ErrLLMBadResponse, fmt.Sprintf("failed to decode JSON from LLM: %s", resp.Content), err)
+	if err := json.Unmarshal([]byte(cleanJSON), &analysis); err != nil {
+		return nil, fxerr.Wrap(fxerr.ErrLLMBadResponse, fmt.Sprintf("failed to decode JSON from LLM: %s", cleanJSON), err)
 	}
 
 	return &analysis, nil
 }
+
