@@ -30,4 +30,4 @@ forgex-sandbox/target/
 
 # Node.js (Phase 5)
 forgex-dashboard/node_modules/
-forgex-dashboard/dist/
+forgex-dashboard/dist/forgex-demo-output/
