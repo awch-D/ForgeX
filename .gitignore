@@ -1,0 +1,32 @@
+# Build artifacts
+/build/
+*.exe
+*.dll
+*.dylib
+
+# Go
+*.test
+*.out
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Rust (Phase 4)
+forgex-sandbox/target/
+
+# Node.js (Phase 5)
+forgex-dashboard/node_modules/
+forgex-dashboard/dist/

@@ -1,0 +1,14 @@
+go 1.25.0
+
+use (
+	./forgex-agent
+	./forgex-cli
+	./forgex-cognition
+	./forgex-core
+	./forgex-evolution
+	./forgex-gear
+	./forgex-governance
+	./forgex-intent
+	./forgex-llm
+	./forgex-mcp
+)
