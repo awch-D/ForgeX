@@ -1,5 +1,6 @@
-// Package coder implements the single Coder Agent for Phase 2.
-// It drives the LLM in a tool-use loop: analyze → call tools → reflect → repeat.
+// Package coder implements the Coder Agent.
+// In Phase 3, the Coder listens on the EventBus for task assignments from
+// the Supervisor, executes the LLM tool-use loop, and reports results back.
 package coder
 
 import (
@@ -10,6 +11,7 @@ import (
 
 	"github.com/pterm/pterm"
 
+	"github.com/awch-D/ForgeX/forgex-agent/protocol"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
 	"github.com/awch-D/ForgeX/forgex-intent/parser"
 	"github.com/awch-D/ForgeX/forgex-llm/provider"
@@ -19,8 +21,7 @@ import (
 const maxIterations = 15
 
 var coderSystemPrompt = `You are ForgeX Coder Agent — an expert autonomous programmer.
-You have been given a task analysis with a clear intent, tech stack, and execution plan.
-Your job is to implement the code by calling tools.
+You receive a specific coding task and implement it by calling tools.
 
 ## Response Format
 You MUST respond in JSON with exactly one of these two formats:
@@ -38,49 +39,116 @@ You MUST respond in JSON with exactly one of these two formats:
 {
   "thought": "Summary of what was accomplished",
   "done": true,
-  "summary": "Created X files implementing Y feature"
+  "summary": "Created X files implementing Y feature",
+  "files_created": ["file1.go", "file2.go"]
 }
 
 ## Rules
 - Write COMPLETE, PRODUCTION-QUALITY code. No placeholders, no TODOs.
 - Create all necessary files including go.mod if needed.
-- After writing code, run tests or build commands to verify.
-- If a build/test fails, read the error and fix the code.
-- Maximum iterations: 15. Plan efficiently.
+- After writing code, run build commands to verify.
+- If a build fails, read the error and fix the code.
+- Maximum iterations: 15.
 `
 
-// Agent is the Coder Agent that drives the tool-use loop.
+// Agent is the Coder Agent that writes code via LLM tool-use loops.
 type Agent struct {
 	llm      provider.Provider
 	registry *tools.Registry
+	bus      *protocol.EventBus
+	inbox    <-chan protocol.Message
 }
 
 // New creates a new Coder Agent.
+// If bus is nil, runs in standalone (Phase 2) mode.
 func New(llm provider.Provider, registry *tools.Registry) *Agent {
 	return &Agent{llm: llm, registry: registry}
 }
 
-type agentResponse struct {
-	Thought   string           `json:"thought"`
-	ToolCalls []tools.ToolCall  `json:"tool_calls,omitempty"`
-	Done      bool             `json:"done,omitempty"`
-	Summary   string           `json:"summary,omitempty"`
+// NewWithBus creates a Coder Agent wired to the EventBus (Phase 3 mode).
+func NewWithBus(llm provider.Provider, registry *tools.Registry, bus *protocol.EventBus) *Agent {
+	inbox := bus.Subscribe(protocol.RoleCoder, 50)
+	return &Agent{llm: llm, registry: registry, bus: bus, inbox: inbox}
 }
 
-// Run executes the full coding loop for the given task analysis.
-func (a *Agent) Run(ctx context.Context, analysis *parser.TaskAnalysis) error {
-	// Build the initial context message
-	taskJSON, _ := json.MarshalIndent(analysis, "", "  ")
+func (a *Agent) Role() protocol.AgentRole { return protocol.RoleCoder }
 
+type agentResponse struct {
+	Thought      string           `json:"thought"`
+	ToolCalls    []tools.ToolCall `json:"tool_calls,omitempty"`
+	Done         bool             `json:"done,omitempty"`
+	Summary      string           `json:"summary,omitempty"`
+	FilesCreated []string         `json:"files_created,omitempty"`
+}
+
+// Run starts the Coder in EventBus mode: listen for tasks and execute them.
+func (a *Agent) Run(ctx context.Context) error {
+	if a.inbox == nil {
+		return fmt.Errorf("coder: no inbox configured, use RunStandalone for Phase 2 mode")
+	}
+
+	for {
+		select {
+		case msg, ok := <-a.inbox:
+			if !ok {
+				return nil
+			}
+			if msg.Type == protocol.MsgTask {
+				a.handleTask(ctx, msg)
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (a *Agent) handleTask(ctx context.Context, msg protocol.Message) {
+	payloadJSON, _ := json.Marshal(msg.Payload)
+	var task protocol.TaskPayload
+	json.Unmarshal(payloadJSON, &task)
+
+	logger.L().Infow("🔨 Coder: received task", "task_id", task.TaskID)
+
+	prompt := fmt.Sprintf("Task: %s\n\nContext: %s", task.Description, task.Context)
+	files, summary, err := a.execute(ctx, prompt)
+
+	result := protocol.ResultPayload{
+		TaskID:       task.TaskID,
+		FilesCreated: files,
+		Summary:      summary,
+		Success:      err == nil,
+	}
+	if err != nil {
+		result.Error = err.Error()
+	}
+
+	a.bus.Publish(ctx, protocol.Message{
+		Sender:   protocol.RoleCoder,
+		Receiver: protocol.RoleSupervisor,
+		Type:     protocol.MsgResult,
+		Payload:  result,
+	})
+}
+
+// RunStandalone executes the full coding loop in Phase 2 (standalone) mode.
+func (a *Agent) RunStandalone(ctx context.Context, analysis *parser.TaskAnalysis) error {
+	taskJSON, _ := json.MarshalIndent(analysis, "", "  ")
+	prompt := fmt.Sprintf("Please implement the following task:\n\n%s", string(taskJSON))
+	_, _, err := a.execute(ctx, prompt)
+	return err
+}
+
+// execute is the core LLM tool-use loop.
+func (a *Agent) execute(ctx context.Context, taskPrompt string) (filesCreated []string, summary string, err error) {
 	history := []provider.Message{
 		{Role: provider.RoleSystem, Content: coderSystemPrompt + "\n\n" + a.registry.ToolsForLLM()},
-		{Role: provider.RoleUser, Content: fmt.Sprintf("Please implement the following task:\n\n%s", string(taskJSON))},
+		{Role: provider.RoleUser, Content: taskPrompt},
 	}
 
 	for i := 0; i < maxIterations; i++ {
 		iterLabel := fmt.Sprintf("[Iter %d/%d]", i+1, maxIterations)
 
-		spinner, _ := pterm.DefaultSpinner.Start(fmt.Sprintf("🤖 %s Agent 思考中...", iterLabel))
+		spinner, _ := pterm.DefaultSpinner.Start(fmt.Sprintf("🤖 %s Coder 思考中...", iterLabel))
 
 		resp, err := a.llm.Generate(ctx, history, &provider.Options{
 			Temperature: 0.2,
@@ -89,71 +157,61 @@ func (a *Agent) Run(ctx context.Context, analysis *parser.TaskAnalysis) error {
 		})
 		if err != nil {
 			spinner.Fail("LLM 调用失败")
-			return fmt.Errorf("LLM generation failed at iteration %d: %w", i+1, err)
+			return nil, "", fmt.Errorf("LLM generation failed at iteration %d: %w", i+1, err)
 		}
 
-		spinner.Success(fmt.Sprintf("%s Agent 响应就绪", iterLabel))
+		spinner.Success(fmt.Sprintf("%s Coder 响应就绪", iterLabel))
 
-		// Parse the structured response
 		cleanJSON := extractJSON(resp.Content)
 		var agentResp agentResponse
 		if err := json.Unmarshal([]byte(cleanJSON), &agentResp); err != nil {
-			logger.L().Warnw("Failed to parse agent response, retrying", "error", err, "raw", cleanJSON[:min(len(cleanJSON), 300)])
-			// Add the raw content as assistant and ask to fix format
+			logger.L().Warnw("Failed to parse agent response, retrying",
+				"error", err, "raw", cleanJSON[:min(len(cleanJSON), 300)])
 			history = append(history, provider.Message{Role: provider.RoleAssistant, Content: resp.Content})
 			history = append(history, provider.Message{Role: provider.RoleUser, Content: "Your response was not valid JSON. Please respond with valid JSON matching the required format."})
 			continue
 		}
 
-		// Show thought
 		pterm.Info.Printf("💭 %s\n", agentResp.Thought)
 
-		// Check if done
 		if agentResp.Done {
 			fmt.Println()
 			pterm.DefaultBox.WithTitle("✅ 任务完成").Println(agentResp.Summary)
-			return nil
+			return agentResp.FilesCreated, agentResp.Summary, nil
 		}
 
-		// Execute tool calls
 		if len(agentResp.ToolCalls) == 0 {
-			logger.L().Warn("Agent returned no tool calls and not done, nudging...")
 			history = append(history, provider.Message{Role: provider.RoleAssistant, Content: resp.Content})
 			history = append(history, provider.Message{Role: provider.RoleUser, Content: "You didn't call any tools and didn't mark done. Please either call tools or set done=true."})
 			continue
 		}
 
-		// Execute each tool call and collect results
 		var toolResultsSB strings.Builder
 		toolResultsSB.WriteString("Tool execution results:\n")
 
 		for j, tc := range agentResp.ToolCalls {
 			pterm.Success.Printf("  🔧 [%d] %s\n", j+1, tc.Name)
 			result := a.registry.Execute(tc.Name, tc.Args)
-			
+
 			status := "✅ success"
 			if !result.Success {
 				status = "❌ failed: " + result.Error
 			}
 
-			// Truncate long output for context window management
 			output := result.Output
 			if len(output) > 2000 {
 				output = output[:2000] + "\n... (truncated)"
 			}
-
 			toolResultsSB.WriteString(fmt.Sprintf("\n--- Tool: %s [%s] ---\n%s\n", tc.Name, status, output))
 		}
 
-		// Append assistant message and tool results to history
 		history = append(history, provider.Message{Role: provider.RoleAssistant, Content: resp.Content})
 		history = append(history, provider.Message{Role: provider.RoleUser, Content: toolResultsSB.String()})
 	}
 
-	return fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
+	return nil, "", fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
 }
 
-// extractJSON strips markdown code fences.
 func extractJSON(raw string) string {
 	s := strings.TrimSpace(raw)
 	if strings.HasPrefix(s, "```") {

@@ -9,8 +9,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/awch-D/ForgeX/forgex-agent/coder"
+	"github.com/awch-D/ForgeX/forgex-agent/pool"
+	"github.com/awch-D/ForgeX/forgex-agent/protocol"
+	"github.com/awch-D/ForgeX/forgex-agent/supervisor"
+	"github.com/awch-D/ForgeX/forgex-agent/tester"
 	"github.com/awch-D/ForgeX/forgex-core/config"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
+	"github.com/awch-D/ForgeX/forgex-gear"
 	"github.com/awch-D/ForgeX/forgex-intent/clarifier"
 	"github.com/awch-D/ForgeX/forgex-intent/confirmation"
 	"github.com/awch-D/ForgeX/forgex-llm/cost"
@@ -18,7 +23,7 @@ import (
 	"github.com/awch-D/ForgeX/forgex-mcp/tools"
 )
 
-const version = "0.2.0-alpha"
+const version = "0.3.0-alpha"
 
 var rootCmd = &cobra.Command{
 	Use:   "forgex",
@@ -56,7 +61,7 @@ var versionCmd = &cobra.Command{
 var outputDir string
 
 func init() {
-	runCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory for generated code (default: ./forgex-output)")
+	runCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory (default: ./forgex-output)")
 }
 
 var runCmd = &cobra.Command{
@@ -84,15 +89,10 @@ var runCmd = &cobra.Command{
 			logger.L().Fatalw("Clarifier failed", "error", err)
 		}
 
-		// Render the intent card
 		confirmation.RenderCard(analysis)
 
 		_, intentCost := cost.Global().Summary()
 		logger.L().Infof("🧠 意图分析花费: 约 $%.4f", intentCost)
-
-		// Phase 2: Coder Agent Execution
-		fmt.Println()
-		pterm.DefaultSection.Println("🚀 启动 Coder Agent")
 
 		// Determine output directory
 		workDir := outputDir
@@ -101,15 +101,47 @@ var runCmd = &cobra.Command{
 		}
 		absWorkDir, _ := filepath.Abs(workDir)
 		os.MkdirAll(absWorkDir, 0755)
-		pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
 
-		// Create tool registry and agent
+		// Create tool registry
 		registry := tools.NewRegistry(absWorkDir)
-		agent := coder.New(llmProvider, registry)
 
-		// Run the agent
-		if err := agent.Run(ctx, analysis); err != nil {
-			logger.L().Fatalw("Coder Agent failed", "error", err)
+		// Gear Evaluation: decide execution strategy
+		fmt.Println()
+		level := gear.Evaluate(analysis)
+		pterm.Info.Printf("⚙️ 任务评级: %s\n", level.String())
+
+		if level.NeedsMultiAgent() {
+			// ===== Phase 3: Multi-Agent Mode =====
+			pterm.DefaultSection.Println("🚀 多 Agent 协作模式")
+			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
+
+			bus := protocol.NewEventBus()
+			defer bus.Close()
+
+			agentPool := pool.NewPool(bus)
+
+			// Register agents
+			sup := supervisor.New(llmProvider, bus, analysis)
+			coderAgent := coder.NewWithBus(llmProvider, registry, bus)
+			testerAgent := tester.New(bus, registry)
+
+			agentPool.Register(sup)
+			agentPool.Register(coderAgent)
+			agentPool.Register(testerAgent)
+
+			// Start all agents
+			agentPool.Start(ctx)
+			agentPool.Wait()
+
+		} else {
+			// ===== Phase 2: Single Agent Mode =====
+			pterm.DefaultSection.Println("🚀 单 Agent 模式")
+			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
+
+			agent := coder.New(llmProvider, registry)
+			if err := agent.RunStandalone(ctx, analysis); err != nil {
+				logger.L().Fatalw("Coder Agent failed", "error", err)
+			}
 		}
 
 		// Final cost summary
