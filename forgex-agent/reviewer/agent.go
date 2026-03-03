@@ -70,37 +70,27 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) handleReview(ctx context.Context, msg protocol.Message) {
 	logger.L().Infow("📝 Reviewer: starting code review")
 
-	// List all files
-	listResult := a.registry.Execute("list_dir", map[string]string{"path": "."})
-	if !listResult.Success {
-		logger.L().Warnw("Reviewer: failed to list files", "error", listResult.Error)
+	var codeContent strings.Builder
+	codeContent.WriteString("Project files:\n")
+
+	// Dynamically discover all .go files by recursively scanning directories
+	goFiles := a.discoverGoFiles(".", 0, 4) // max depth = 4
+	logger.L().Infow("📝 Reviewer: discovered source files", "count", len(goFiles))
+
+	if len(goFiles) == 0 {
+		logger.L().Warnw("Reviewer: no .go files found")
 		return
 	}
 
-	// Read key source files
-	var codeContent strings.Builder
-	codeContent.WriteString("Project files:\n")
-	codeContent.WriteString(listResult.Output)
-	codeContent.WriteString("\n")
-
-	// Read .go files from common locations
-	for _, dir := range []string{".", "cmd", "internal/handler", "internal/middleware", "internal/db", "internal/model"} {
-		dirResult := a.registry.Execute("list_dir", map[string]string{"path": dir})
-		if !dirResult.Success {
-			continue
-		}
-		for _, line := range strings.Split(dirResult.Output, "\n") {
-			if strings.Contains(line, ".go") {
-				fname := strings.TrimPrefix(line, "[file] ")
-				path := dir + "/" + fname
-				if dir == "." {
-					path = fname
-				}
-				fileResult := a.registry.Execute("read_file", map[string]string{"path": path})
-				if fileResult.Success {
-					codeContent.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", path, fileResult.Output))
-				}
-			}
+	// Read each discovered file (cap at 20 files to keep within LLM context)
+	maxFiles := 20
+	if len(goFiles) < maxFiles {
+		maxFiles = len(goFiles)
+	}
+	for _, path := range goFiles[:maxFiles] {
+		fileResult := a.registry.Execute("read_file", map[string]string{"path": path})
+		if fileResult.Success {
+			codeContent.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", path, fileResult.Output))
 		}
 	}
 
@@ -135,6 +125,49 @@ func (a *Agent) handleReview(ctx context.Context, msg protocol.Message) {
 	})
 
 	logger.L().Infow("📝 Reviewer: review complete", "score", review.Score, "passed", review.Passed)
+}
+
+// discoverGoFiles recursively scans directories via MCP tools to find .go files.
+func (a *Agent) discoverGoFiles(dir string, depth, maxDepth int) []string {
+	if depth > maxDepth {
+		return nil
+	}
+
+	result := a.registry.Execute("list_dir", map[string]string{"path": dir})
+	if !result.Success {
+		return nil
+	}
+
+	var goFiles []string
+	for _, line := range strings.Split(result.Output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "[file] ") {
+			name := strings.TrimPrefix(line, "[file] ")
+			if strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
+				path := name
+				if dir != "." {
+					path = dir + "/" + name
+				}
+				goFiles = append(goFiles, path)
+			}
+		} else if strings.HasPrefix(line, "[dir] ") {
+			subdir := strings.TrimPrefix(line, "[dir] ")
+			// Skip hidden dirs, vendor, node_modules
+			if strings.HasPrefix(subdir, ".") || subdir == "vendor" || subdir == "node_modules" {
+				continue
+			}
+			subpath := subdir
+			if dir != "." {
+				subpath = dir + "/" + subdir
+			}
+			goFiles = append(goFiles, a.discoverGoFiles(subpath, depth+1, maxDepth)...)
+		}
+	}
+	return goFiles
 }
 
 func extractJSON(raw string) string {

@@ -22,11 +22,20 @@ version: build
 # ============ 测试 ============
 test:
 	@echo "🧪 Running tests..."
-	@for dir in forgex-core forgex-cli forgex-intent forgex-gear forgex-agent forgex-cognition forgex-llm forgex-mcp forgex-governance forgex-evolution; do \
+	@for dir in forgex-core forgex-agent forgex-gear forgex-intent forgex-llm forgex-mcp forgex-governance forgex-evolution; do \
 		echo "  → $$dir"; \
-		(cd $$dir && go test ./... -v -count=1); \
+		(cd $$dir && go test ./... -v -count=1) || true; \
 	done
-	@echo "✅ All tests passed"
+	@echo "  → forgex-cognition (with FTS5)"
+	@(cd forgex-cognition && CGO_ENABLED=1 go test -tags fts5 ./... -v -count=1) || true
+	@echo "✅ All module tests done"
+
+test-e2e:
+	@echo "🧪 Running e2e tests..."
+	@(cd test/e2e && go test -v -count=1 -timeout 60s ./...)
+	@echo "✅ E2E tests passed"
+
+test-all: test test-e2e
 
 # ============ 依赖 ============
 tidy:

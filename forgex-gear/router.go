@@ -41,57 +41,97 @@ func (l Level) NeedsMultiAgent() bool {
 }
 
 // Evaluate analyzes a task and returns its complexity level.
+// Scoring dimensions:
+//  1. Execution plan size (number of steps/files to create)
+//  2. Tech stack breadth
+//  3. Keyword complexity indicators
+//  4. Files to modify count (existing codebase impact)
+//  5. LLM's own estimation (as reference signal)
 func Evaluate(analysis *parser.TaskAnalysis) Level {
 	score := 0
 
-	// Check number of planned files
+	// Dimension 1: Execution plan size
 	fileCount := len(analysis.ExecutionPlan)
-	if fileCount <= 2 {
+	switch {
+	case fileCount <= 2:
 		score += 1
-	} else if fileCount <= 5 {
+	case fileCount <= 5:
 		score += 2
-	} else {
+	case fileCount <= 10:
 		score += 3
+	default:
+		score += 4
 	}
 
-	// Check tech stack complexity
-	if len(analysis.TechStack) > 3 {
+	// Dimension 2: Tech stack breadth
+	switch {
+	case len(analysis.TechStack) > 4:
+		score += 3
+	case len(analysis.TechStack) > 2:
 		score += 2
-	} else if len(analysis.TechStack) > 1 {
+	case len(analysis.TechStack) > 0:
 		score += 1
 	}
 
-	// Keyword complexity indicators
+	// Dimension 3: Keyword complexity indicators
 	desc := strings.ToLower(analysis.CoreIntent)
-	complexityKeywords := []string{
-		"微服务", "microservice", "分布式", "distributed",
-		"认证", "鉴权", "auth", "jwt", "oauth",
-		"数据库", "database", "缓存", "cache",
-		"并发", "concurrent", "异步", "async",
-		"api", "rest", "grpc", "websocket",
+	complexityKeywords := map[string]int{
+		// High complexity (weight 2)
+		"微服务": 2, "microservice": 2, "分布式": 2, "distributed": 2,
+		"并发": 2, "concurrent": 2, "实时": 2, "realtime": 2,
+		"grpc": 2, "websocket": 2,
+		// Medium complexity (weight 1)
+		"认证": 1, "鉴权": 1, "auth": 1, "jwt": 1, "oauth": 1,
+		"数据库": 1, "database": 1, "缓存": 1, "cache": 1,
+		"异步": 1, "async": 1,
+		"api": 1, "rest": 1, "crud": 1,
 	}
 
+	keywordScore := 0
 	keywordHits := 0
-	for _, kw := range complexityKeywords {
+	for kw, weight := range complexityKeywords {
 		if strings.Contains(desc, kw) {
+			keywordScore += weight
 			keywordHits++
 		}
 	}
-	if keywordHits >= 4 {
+	switch {
+	case keywordScore >= 6:
+		score += 4
+	case keywordScore >= 4:
 		score += 3
-	} else if keywordHits >= 2 {
+	case keywordScore >= 2:
 		score += 2
-	} else if keywordHits >= 1 {
+	case keywordScore >= 1:
 		score += 1
 	}
 
+	// Dimension 4: Existing codebase impact (files to modify)
+	modifyCount := len(analysis.FilesToModify)
+	switch {
+	case modifyCount > 10:
+		score += 3
+	case modifyCount > 5:
+		score += 2
+	case modifyCount > 0:
+		score += 1
+	}
+
+	// Dimension 5: LLM's own estimation (as calibration signal)
+	if analysis.EstimatedLevel >= 3 {
+		score += 2
+	} else if analysis.EstimatedLevel >= 2 {
+		score += 1
+	}
+
+	// Map score to level
 	var level Level
 	switch {
-	case score <= 2:
+	case score <= 3:
 		level = L1Simple
-	case score <= 4:
-		level = L2Medium
 	case score <= 6:
+		level = L2Medium
+	case score <= 10:
 		level = L3Complex
 	default:
 		level = L4Advanced
@@ -102,7 +142,10 @@ func Evaluate(analysis *parser.TaskAnalysis) Level {
 		"level", level.String(),
 		"multi_agent", level.NeedsMultiAgent(),
 		"file_count", fileCount,
+		"modify_count", modifyCount,
 		"keyword_hits", keywordHits,
+		"keyword_score", keywordScore,
+		"llm_estimated", analysis.EstimatedLevel,
 	)
 
 	return level
