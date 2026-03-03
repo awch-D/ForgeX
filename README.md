@@ -1,98 +1,194 @@
-# ForgeX ⚡
+<div align="center">
 
-> **Local-First AI Programmer** — 融合双重隔离沙箱与流体协程架构的终极 AI 程序员
+# ⚡ ForgeX
 
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Phase_0_Alpha-orange)](https://github.com/awch-D/ForgeX)
+**Local-First AI Programmer — 本地优先的 AI 自动编程系统**
 
----
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-16%2F16%20PASS-brightgreen)](Makefile)
 
-## ✨ 项目简介
+*用一句话描述你想要什么，ForgeX 自动帮你写代码、测试、审查，一条龙交付。*
 
-**ForgeX** 是一款旨在"完全接管开发工作流"的前沿 AI 程序员系统。它摒弃了传统的臃肿微服务，采用 Go 构建极速单机控制面，并以 Rust/Wasm 双重防爆沙箱为执行底座。
-
-### 核心特性
-
-- ⚡ **流体 Agent 协程池** — 基于 Go Goroutine，毫秒级调度数十个 AI 角色并行探索最优解
-- ⚙️ **智能挡位器 (L1~L4)** — 根据任务复杂度自动变速，节约 Token 开销
-- 🛡️ **Dual-Metered 安全沙箱** — CPU 燃料计量 + 内存硬隔离 + 防 SSRF 网络拦截
-- 🧠 **分级认知与错误防火墙** — 隔离 Agent 错误推断，仅验证后事实可共享
-- 🔍 **存量代码考古** — 理解、适配并融入您的现有代码库
-- 📺 **玄武岩 Dashboard** — 实时监控 Agent 活动、成本和进度
+</div>
 
 ---
 
-## 🚀 快速开始
-
-### 安装
+## 🎬 快速体验
 
 ```bash
-# 克隆仓库
+# 克隆并编译
 git clone https://github.com/awch-D/ForgeX.git
-cd ForgeX
+cd ForgeX && make build
 
-# 构建
+# 运行你的第一个任务
+./build/forgex run "用 Go 写一个 HTTP 文件服务器"
+```
+
+ForgeX 会自动完成：意图分析 → 需求确认 → 挡位评估 → 代码生成 → 质量评分。
+
+---
+
+## ✨ 核心特性
+
+| 特性 | 描述 |
+|------|------|
+| 🏠 **Local-First** | 纯 Go 单二进制，零外部服务依赖，数据不出本机 |
+| 🤖 **多 Agent 协作** | Supervisor 分解任务 → Coder 并发编码 → Tester 验证 → Reviewer 审查 |
+| ⚙️ **智能挡位** | 5 维评估自动识别任务复杂度，简单任务 1 个 Agent，复杂任务多 Agent 并发 |
+| 🔀 **LLM 路由** | 多模型配置 + 3 种策略（gear/cheapest/fallback），简单任务用便宜模型 |
+| 🧠 **代码知识图谱** | AST 解析项目结构，Agent 修改代码前自动感知依赖影响半径 |
+| 📊 **进化引擎** | 自动编译+测试评分，低于阈值提示优化 |
+| 🛡️ **四级安全带** | 绿/黄/红/黑操作分级拦截，危险操作需人工确认 |
+| 💰 **成本控制** | 实时 Token 计费，预算超限自动熔断 |
+
+---
+
+## 🏗 架构总览
+
+```
+forgex run "你的任务"
+     │
+     ▼
+┌─ 意图感知层 ──────────────────────────────┐
+│  多轮追问 → 需求解析 → 可视化确认卡       │
+└────────────────────┬──────────────────────┘
+                     ▼
+┌─ 控制面 ──────────────────────────────────┐
+│  挡位评估 → LLM 路由 → Agent 协程池       │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │
+│  │ SUP  │→│ DEV  │→│ TST  │→│ REVIEWER │ │
+│  └──────┘ └──────┘ └──────┘ └──────────┘ │
+└────────────────────┬──────────────────────┘
+                     ▼
+┌─ 认知层 ──────────────────────────────────┐
+│  事实库(SQLite) │ 向量检索 │ 代码图谱(AST) │
+│  草稿区 │ 错误防火墙 │ 进化引擎评分       │
+└────────────────────┬──────────────────────┘
+                     ▼
+┌─ 治理层 ──────────────────────────────────┐
+│  安全带 │ 预算控制 │ 审计日志 │ 终端监控   │
+└───────────────────────────────────────────┘
+```
+
+---
+
+## 📦 模块一览
+
+| 模块 | 职责 | 测试状态 |
+|------|------|----------|
+| `forgex-cli` | CLI 入口 + 终端事件渲染器 | ✅ |
+| `forgex-core` | 配置 / 日志 / 错误体系 | ✅ |
+| `forgex-intent` | 意图解析 / 多轮追问 / AST 考古 | ✅ |
+| `forgex-gear` | 5 维智能挡位评估器 | ✅ |
+| `forgex-llm` | LLM Provider 接口 + 多模型路由 | ✅ |
+| `forgex-agent` | Supervisor / Coder / Tester / Reviewer + EventBus + 协程池 | ✅ |
+| `forgex-cognition` | 事实库 / 草稿区 / 向量检索 / 防火墙 / 知识图谱 | ✅ |
+| `forgex-governance` | 安全带 / 预算控制 / 审计日志 | ✅ |
+| `forgex-evolution` | 编译+测试自动评分引擎 | ✅ |
+| `forgex-mcp` | MCP 工具层（文件读写 / 终端执行） | ✅ |
+| `forgex-sandbox` | 沙箱执行器接口 | ✅ |
+
+---
+
+## ⚙️ 配置参考
+
+编辑项目根目录下的 `forgex.yaml`：
+
+```yaml
+log_level: info
+dev_mode: true
+
+llm:
+  provider: litellm
+  endpoint: "https://your-api-endpoint"
+  api_key: "sk-your-key"
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+  temperature: 0.7
+
+  # 可选：多模型智能路由
+  router:
+    strategy: "gear"  # gear | cheapest | fallback
+    models:
+      - name: "deepseek-coder-v2"
+        endpoint: "https://your-api-endpoint"
+        api_key: "sk-xxx"
+        tier: "low"    # 简单任务用
+      - name: "claude-opus-4-20250514"
+        endpoint: "https://your-api-endpoint"
+        api_key: "sk-xxx"
+        tier: "high"   # 复杂任务用
+
+sandbox:
+  backend: exec
+  timeout_sec: 30
+  memory_mb: 512
+
+governance:
+  auto_approve_level: yellow  # green | yellow
+  max_budget: 10.0            # 最大预算 (USD)
+```
+
+### 路由策略说明
+
+| 策略 | 行为 |
+|------|------|
+| `gear` | L1/L2 简单任务用 low-tier，L3+ 用 high-tier（默认） |
+| `cheapest` | 永远选最便宜的模型 |
+| `fallback` | 先尝试便宜模型，失败自动切换高端模型 |
+
+---
+
+## 🧪 测试
+
+```bash
+make test        # 运行全部单元测试
+make test-e2e    # 运行端到端集成测试
+make test-all    # 全量测试
+```
+
+---
+
+## 🛠 开发
+
+```bash
+# 前置条件
+go 1.25+
+
+# 编译
 make build
 
-# 验证
-./build/forgex version
+# 整理依赖
+make tidy
+
+# 清理构建产物
+make clean
 ```
 
-### 使用
-
-```bash
-# 运行一个编码任务 (Phase 1+ 实现)
-./build/forgex run "帮我写一个带用户登录的 Go HTTP 服务"
-```
-
----
-
-## 🏗️ 项目结构
+### 项目结构
 
 ```
 ForgeX/
-├── forgex-cli/         ⚡ CLI 入口 (Cobra)
-├── forgex-core/        📦 公共基础库 (日志/错误/配置/类型)
-├── forgex-intent/      🎯 意图对齐引擎
-├── forgex-gear/        ⚙️ 智能挡位器
-├── forgex-agent/       🌊 流体 Agent 引擎
-├── forgex-cognition/   🧠 集体认知系统
-├── forgex-llm/         🧠 LLM 多模型路由
-├── forgex-mcp/         🔧 MCP 工具层
-├── forgex-governance/  🛡️ 守护与治理
-├── forgex-evolution/   🧬 引导式进化引擎
-├── forgex-sandbox/     🛡️ Rust 执行沙箱 (Phase 4)
-└── forgex-dashboard/   📺 玄武岩 Dashboard (Phase 5)
+├── forgex-cli/          # CLI 入口 + 终端渲染器
+├── forgex-core/         # 配置 / 日志 / 错误
+├── forgex-intent/       # 意图解析 / AST 考古
+├── forgex-gear/         # 挡位评估器
+├── forgex-llm/          # LLM 适配 + 路由
+├── forgex-agent/        # 多 Agent 体系
+├── forgex-cognition/    # 认知存储层
+├── forgex-governance/   # 治理层
+├── forgex-evolution/    # 进化引擎
+├── forgex-mcp/          # MCP 工具
+├── forgex-sandbox/      # 沙箱接口
+├── test/e2e/            # 集成测试
+├── forgex.yaml          # 配置文件
+├── go.work              # Go workspace
+└── Makefile             # 构建脚本
 ```
 
 ---
 
-## 📋 开发路线图
+## 📄 License
 
-| 阶段 | 周期 | 核心产出 | 状态 |
-|------|------|---------|------|
-| **Phase 0** 骨架基建 | 2 周 | CLI + 日志 + 配置 + CI | 🟢 进行中 |
-| **Phase 1** LLM + 意图 | 3 周 | 多模型路由 + 需求对话 | ⏳ 待启动 |
-| **Phase 2** 单 Agent + MCP | 3 周 | 能自动写代码的 MVP | ⏳ 待启动 |
-| **Phase 3** 多 Agent + 认知 | 6 周 | 并行协作 + 记忆隔离 | ⏳ 待启动 |
-| **Phase 4** 安全沙箱 + 治理 | 4 周 | Wasm 双重防爆 + 审计 | ⏳ 待启动 |
-| **Phase 5** Dashboard + 进化 | 8 周 | 完整产品化 | ⏳ 待启动 |
-
----
-
-## 🛠️ 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 控制面 | Go (Goroutines) |
-| 执行沙箱 | Rust + Wasmtime (Phase 4) |
-| LLM 路由 | LiteLLM 代理 → 自研路由 |
-| 事实存储 | SQLite + FTS5 |
-| 前端 | Vite + React + TypeScript (Phase 5) |
-
----
-
-## 📄 许可证
-
-[Apache License 2.0](LICENSE)
+[MIT](LICENSE) © ForgeX Contributors
