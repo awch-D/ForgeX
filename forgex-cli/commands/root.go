@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/awch-D/ForgeX/forgex-llm/cost"
 	"github.com/awch-D/ForgeX/forgex-llm/litellm"
 	"github.com/awch-D/ForgeX/forgex-mcp/tools"
+	"github.com/awch-D/ForgeX/forgex-server/bus"
 )
 
 const version = "0.3.0-alpha"
@@ -67,10 +69,14 @@ var versionCmd = &cobra.Command{
 }
 
 // Flags
-var outputDir string
+var (
+	outputDir string
+	dashPort  int
+)
 
 func init() {
 	runCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory (default: ./forgex-output)")
+	runCmd.Flags().IntVar(&dashPort, "dash", 0, "Start a local websocket dashboard server on this port (e.g. 8080)")
 }
 
 var runCmd = &cobra.Command{
@@ -128,19 +134,33 @@ var runCmd = &cobra.Command{
 		level := gear.Evaluate(analysis)
 		pterm.Info.Printf("⚙️ 任务评级: %s\n", level.String())
 
+		// Setup event bus globally so dash server can listen
+		eventBus := protocol.NewEventBus()
+		defer eventBus.Close()
+
+		if dashPort > 0 {
+			hub := bus.NewHub(eventBus)
+			go hub.Run()
+
+			http.HandleFunc("/ws", hub.HandleWebSocket)
+			pterm.Info.Printf("🖥 Dashboard WebSocket Server starting on ws://localhost:%d/ws\n", dashPort)
+			go func() {
+				// Don't care about the error, background service
+				_ = http.ListenAndServe(fmt.Sprintf(":%d", dashPort), nil)
+			}()
+		}
+
 		if level.NeedsMultiAgent() {
 			// ===== Phase 3: Multi-Agent Mode =====
 			pterm.DefaultSection.Println("🚀 多 Agent 协作模式")
 			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
 
-			bus := protocol.NewEventBus()
-
-			agentPool := pool.NewPool(bus)
+			agentPool := pool.NewPool(eventBus)
 
 			// Register agents
-			sup := supervisor.New(llmProvider, bus, analysis)
-			coderAgent := coder.NewWithBus(llmProvider, registry, bus)
-			testerAgent := tester.New(bus, registry)
+			sup := supervisor.New(llmProvider, eventBus, analysis)
+			coderAgent := coder.NewWithBus(llmProvider, registry, eventBus)
+			testerAgent := tester.New(eventBus, registry)
 
 			agentPool.Register(sup)
 			agentPool.Register(coderAgent)
@@ -153,14 +173,13 @@ var runCmd = &cobra.Command{
 			// then gracefully shut down the remaining agents.
 			agentPool.WaitForRole(protocol.RoleSupervisor)
 			agentPool.Shutdown()
-			bus.Close()
 
 		} else {
 			// ===== Phase 2: Single Agent Mode =====
 			pterm.DefaultSection.Println("🚀 单 Agent 模式")
 			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
 
-			agent := coder.New(llmProvider, registry)
+			agent := coder.NewWithBus(llmProvider, registry, eventBus)
 			if err := agent.RunStandalone(ctx, analysis); err != nil {
 				logger.L().Fatalw("Coder Agent failed", "error", err)
 			}
