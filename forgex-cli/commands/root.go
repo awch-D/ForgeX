@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/awch-D/ForgeX/forgex-agent/protocol"
 	"github.com/awch-D/ForgeX/forgex-agent/supervisor"
 	"github.com/awch-D/ForgeX/forgex-agent/tester"
+	"github.com/awch-D/ForgeX/forgex-cli/display"
 	"github.com/awch-D/ForgeX/forgex-cognition/graph"
 	"github.com/awch-D/ForgeX/forgex-core/config"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
@@ -27,7 +27,6 @@ import (
 	"github.com/awch-D/ForgeX/forgex-llm/provider"
 	"github.com/awch-D/ForgeX/forgex-llm/router"
 	"github.com/awch-D/ForgeX/forgex-mcp/tools"
-	"github.com/awch-D/ForgeX/forgex-server/bus"
 )
 
 const version = "0.3.0-alpha"
@@ -76,12 +75,10 @@ var versionCmd = &cobra.Command{
 // Flags
 var (
 	outputDir string
-	dashPort  int
 )
 
 func init() {
 	runCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory (default: ./forgex-output)")
-	runCmd.Flags().IntVar(&dashPort, "dash", 0, "Start a local websocket dashboard server on this port (e.g. 8080)")
 }
 
 var runCmd = &cobra.Command{
@@ -145,27 +142,18 @@ var runCmd = &cobra.Command{
 		level := gear.Evaluate(analysis)
 		pterm.Info.Printf("⚙️ 任务评级: %s\n", level.String())
 
-		// Setup event bus globally so dash server can listen
+		// Setup event bus
 		eventBus := protocol.NewEventBus()
 		defer eventBus.Close()
+
+		// Start terminal live monitor (replaces Web Dashboard)
+		display.StartLiveMonitor(eventBus)
 
 		// Build architecture graph
 		graphStore := graph.NewStore()
 		pterm.Info.Println("🏗 正在扫描代码架构图谱...")
 		archBuilder := archaeology.NewBuilder(graphStore)
 		_ = archBuilder.Build(absWorkDir)
-
-		if dashPort > 0 {
-			hub := bus.NewHub(eventBus)
-			go hub.Run()
-
-			http.HandleFunc("/ws", hub.HandleWebSocket)
-			pterm.Info.Printf("🖥 Dashboard WebSocket Server starting on ws://localhost:%d/ws\n", dashPort)
-			go func() {
-				// Don't care about the error, background service
-				_ = http.ListenAndServe(fmt.Sprintf(":%d", dashPort), nil)
-			}()
-		}
 
 		if level.NeedsMultiAgent() {
 			// ===== Phase 3: Multi-Agent Mode =====
@@ -214,10 +202,6 @@ var runCmd = &cobra.Command{
 		}
 
 		// Final cost summary
-		totalTokens, totalCost := cost.Global().Summary()
-		fmt.Println()
-		pterm.DefaultBox.WithTitle("💰 成本汇总").Println(
-			fmt.Sprintf("Token 总消耗: %d\n预估花费: $%.4f", totalTokens, totalCost),
-		)
+		display.PrintCostSummary()
 	},
 }

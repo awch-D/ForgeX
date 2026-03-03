@@ -16,16 +16,6 @@ github.com/MarvinJWendt/testza v0.4.2/go.mod h1:mSdhXiKH8sg/gQehJ63bINcCKp7RtYew
 github.com/MarvinJWendt/testza v0.5.2 h1:53KDo64C1z/h/d/stCYCPY69bt/OSwjq5KpFNwi+zB4=
 github.com/MarvinJWendt/testza v0.5.2/go.mod h1:xu53QFE5sCdjtMCKk8YMQ2MnymimEctc4n3EjyIYvEY=
 github.com/atomicgo/cursor v0.0.1/go.mod h1:cBON2QmmrysudxNBFthvMtN32r3jxVRIvzkUiF/RuIk=
-github.com/awch-D/ForgeX/forgex-agent v0.0.0-20260303024956-e7a52011e492 h1:ToKXZNuh640d7Agf321dEKQe5/jAlJbz+VRoRK8T+lA=
-github.com/awch-D/ForgeX/forgex-agent v0.0.0-20260303024956-e7a52011e492/go.mod h1:uTdmB1wdnuSnyhH7WMwJIBgq/NhdBeUTkanGm9jDgjo=
-github.com/awch-D/ForgeX/forgex-gear v0.0.0-20260303024956-e7a52011e492 h1:Kho+dD2R4KWFbMqLVCFgvK3PtZiuxcHjft5iL+KOQZU=
-github.com/awch-D/ForgeX/forgex-gear v0.0.0-20260303024956-e7a52011e492/go.mod h1:xoxljN1v1TOxVZ7oZN7f0j2yRWXKu+rjz+UKbNKJa7g=
-github.com/awch-D/ForgeX/forgex-intent v0.0.0-20260303024956-e7a52011e492 h1:uEVuZuqV1SEMqX/+mw498ZXPJVzbIPB56fKS5Zyt/HI=
-github.com/awch-D/ForgeX/forgex-intent v0.0.0-20260303024956-e7a52011e492/go.mod h1:Lq+CTILhKe0CKhP9RPoJDD8a/ZlKeIB5joYPzPJvd7I=
-github.com/awch-D/ForgeX/forgex-llm v0.0.0-20260303024956-e7a52011e492 h1:9NiI+nGUBcGR7yu9dYZVUUCe7KkUQsGPR1LcGw/UP/g=
-github.com/awch-D/ForgeX/forgex-llm v0.0.0-20260303024956-e7a52011e492/go.mod h1:eFcsPKR9XhvSX0LpWE/I23ZRBNGz6C4i19xSwXTvnw0=
-github.com/awch-D/ForgeX/forgex-mcp v0.0.0-20260303024956-e7a52011e492 h1:iHVYzcxcZYhF1f1YZSQlKdzhpI4VpkUWbUHDW7Yit9c=
-github.com/awch-D/ForgeX/forgex-mcp v0.0.0-20260303024956-e7a52011e492/go.mod h1:xsWDnGMIGWELWpGfS3A4LeYyQqkdbydm+A/ZmsfcOKw=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/containerd/console v1.0.3/go.mod h1:7LqA/THxQ86k76b8c/EMSiaJ3h1eZkMkXar0TQ1gf3U=
@@ -68,6 +58,8 @@ github.com/lithammer/fuzzysearch v1.1.8/go.mod h1:IdqeyBClc3FFqSzYq/MXESsS4S0FsZ
 github.com/mattn/go-runewidth v0.0.13/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mattn/go-runewidth v0.0.20 h1:WcT52H91ZUAwy8+HUkdM3THM6gXqXuLJi9O3rjcQQaQ=
 github.com/mattn/go-runewidth v0.0.20/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
+github.com/mattn/go-sqlite3 v1.14.34 h1:3NtcvcUnFBPsuRcno8pUtupspG/GM+9nZ88zgJcp6Zk=
+github.com/mattn/go-sqlite3 v1.14.34/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/pelletier/go-toml/v2 v2.2.4 h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=
 github.com/pelletier/go-toml/v2 v2.2.4/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

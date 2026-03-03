@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/awch-D/ForgeX/forgex-agent v0.0.0-20260303024956-e7a52011e492
+	github.com/awch-D/ForgeX/forgex-cognition v0.0.0-00010101000000-000000000000
 	github.com/awch-D/ForgeX/forgex-core v0.0.0
 	github.com/awch-D/ForgeX/forgex-gear v0.0.0-20260303024956-e7a52011e492
 	github.com/awch-D/ForgeX/forgex-intent v0.0.0-20260303024956-e7a52011e492
@@ -11,6 +12,11 @@ require (
 	github.com/awch-D/ForgeX/forgex-mcp v0.0.0-20260303024956-e7a52011e492
 	github.com/pterm/pterm v0.12.83
 	github.com/spf13/cobra v1.10.2
+)
+
+require (
+	github.com/awch-D/ForgeX/forgex-governance v0.0.0 // indirect
+	github.com/mattn/go-sqlite3 v1.14.34 // indirect
 )
 
 require (
@@ -46,3 +52,19 @@ require (
 replace github.com/awch-D/ForgeX/forgex-core => ../forgex-core
 
 replace github.com/awch-D/ForgeX/forgex-evolution => ../forgex-evolution
+
+replace github.com/awch-D/ForgeX/forgex-cognition => ../forgex-cognition
+
+replace github.com/awch-D/ForgeX/forgex-intent => ../forgex-intent
+
+replace github.com/awch-D/ForgeX/forgex-llm => ../forgex-llm
+
+replace github.com/awch-D/ForgeX/forgex-agent => ../forgex-agent
+
+replace github.com/awch-D/ForgeX/forgex-gear => ../forgex-gear
+
+replace github.com/awch-D/ForgeX/forgex-mcp => ../forgex-mcp
+
+replace github.com/awch-D/ForgeX/forgex-governance => ../forgex-governance
+
+replace github.com/awch-D/ForgeX/forgex-server => ../forgex-server
