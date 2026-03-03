@@ -149,11 +149,15 @@ var runCmd = &cobra.Command{
 		// Start terminal live monitor (replaces Web Dashboard)
 		display.StartLiveMonitor(eventBus)
 
-		// Build architecture graph
+		// Build architecture graph (AST + Git History)
 		graphStore := graph.NewStore()
-		pterm.Info.Println("🏗 正在扫描代码架构图谱...")
+		pterm.Info.Println("🏗 正在扫描代码架构图谱与 Git 考古历史...")
 		archBuilder := archaeology.NewBuilder(graphStore)
 		_ = archBuilder.Build(absWorkDir)
+
+		gitAnalyzer := archaeology.NewGitAnalyzer(graphStore)
+		// Analyze recent 100 commits to find hot spots and implicit dependencies
+		_ = gitAnalyzer.Analyze(ctx, absWorkDir, 100)
 
 		if level.NeedsMultiAgent() {
 			// ===== Phase 3: Multi-Agent Mode =====

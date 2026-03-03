@@ -322,6 +322,24 @@ func (s *Store) BuildSummary() string {
 		} else {
 			sb.WriteString("- (no exported struct/func detected)\n")
 		}
+
+		// Inject Git Archaeology metadata
+		if count, ok := f.Properties["commit_count"]; ok {
+			sb.WriteString(fmt.Sprintf("  [🚧 Git 热点] 近期被频繁修改 %s 次\n", count))
+		}
+
+		var related []string
+		for _, e := range s.outEdges[f.ID] {
+			if e.Type == "CoModifiedWith" {
+				if tgt, ok := s.nodes[e.DstID]; ok {
+					// Use path relative or just base name
+					related = append(related, fmt.Sprintf("%s (共现 %v 次)", tgt.Properties["path"], e.Weight))
+				}
+			}
+		}
+		if len(related) > 0 {
+			sb.WriteString(fmt.Sprintf("  [🔗 隐性耦合] 经常同此文件一起修改的有: %s\n", strings.Join(related, ", ")))
+		}
 	}
 	sb.WriteString("-------------------------------------\n")
 	return sb.String()

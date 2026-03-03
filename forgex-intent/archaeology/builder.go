@@ -43,22 +43,38 @@ func (b *Builder) Build(dir string) error {
 			return nil
 		}
 
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
+		if strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, ".test.ts") || strings.HasSuffix(path, ".spec.ts") || strings.HasSuffix(path, "test_") {
+			// Skip test files from generating graph noise for now
+			// or optionally they can be parsed. Let's skip.
+			if strings.HasSuffix(path, ".go") {
+				return nil
+			}
 		}
 
-		b.parseFile(path, dir)
+		if strings.HasSuffix(path, ".go") {
+			b.parseFile(path, dir)
+		} else if strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".tsx") || strings.HasSuffix(path, ".jsx") {
+			b.parseTSFile(path, dir)
+		} else if strings.HasSuffix(path, ".py") {
+			b.parsePythonFile(path, dir)
+		}
+
 		return nil
 	})
 
 	return err
 }
 
-func (b *Builder) parseFile(filePath, rootDir string) {
+func (b *Builder) getRelPath(filePath, rootDir string) string {
 	relPath, err := filepath.Rel(rootDir, filePath)
 	if err != nil {
-		relPath = filePath
+		return filePath
 	}
+	return relPath
+}
+
+func (b *Builder) parseFile(filePath, rootDir string) {
+	relPath := b.getRelPath(filePath, rootDir)
 
 	// 1. Create File Node
 	fileNode := &graph.Node{
