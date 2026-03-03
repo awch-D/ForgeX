@@ -12,7 +12,8 @@ import (
 )
 
 // RenderCard prints a beautiful summary of the task analysis to the console.
-func RenderCard(analysis *parser.TaskAnalysis) {
+// Returns true if user confirms, false if user declines.
+func RenderCard(analysis *parser.TaskAnalysis) bool {
 	fmt.Println()
 
 	// Gear level representation
@@ -21,42 +22,81 @@ func RenderCard(analysis *parser.TaskAnalysis) {
 		levelStr = types.L2.String() // Default fallback
 	}
 
+	// Level-based emoji
+	levelEmoji := "🟢"
+	switch {
+	case analysis.EstimatedLevel >= 4:
+		levelEmoji = "🔴"
+	case analysis.EstimatedLevel >= 3:
+		levelEmoji = "🟠"
+	case analysis.EstimatedLevel >= 2:
+		levelEmoji = "🟡"
+	}
+
 	// Tech Stack
 	techStack := strings.Join(analysis.TechStack, ", ")
 	if techStack == "" {
 		techStack = "未指定 / 自动推断"
 	}
 
-	// 1. Basic Info Table
+	// 1. Header
+	pterm.DefaultSection.Println("🎯 ForgeX 需求确认")
+
+	// 2. Basic Info Table
 	tableData := pterm.TableData{
 		{"🎯 核心意图", pterm.LightCyan(analysis.CoreIntent)},
-		{"⚙️ 任务挡位", levelStr},
+		{levelEmoji + " 任务挡位", pterm.Bold.Sprint(levelStr)},
 		{"🛠️ 技术栈", techStack},
+		{"📁 预计文件数", fmt.Sprintf("%d 个", len(analysis.ExecutionPlan))},
 	}
 	pterm.DefaultTable.WithHasHeader(false).WithData(tableData).WithBoxed().Render()
 
-	// 2. Execution Plan bullet points
+	// 3. Execution Plan bullet points
 	if len(analysis.ExecutionPlan) > 0 {
 		fmt.Println()
-		pterm.DefaultSection.Println("📝 执行计划预览")
-		
+		pterm.Info.Println("📝 执行计划:")
+
 		var listItems []pterm.BulletListItem
-		for _, step := range analysis.ExecutionPlan {
-			listItems = append(listItems, pterm.BulletListItem{Level: 0, Text: step})
+		for i, step := range analysis.ExecutionPlan {
+			prefix := fmt.Sprintf("%d.", i+1)
+			listItems = append(listItems, pterm.BulletListItem{Level: 0, Text: prefix + " " + step})
 		}
 		pterm.DefaultBulletList.WithItems(listItems).Render()
 	}
 
-	// 3. Files to modify
+	// 4. Files to modify
 	if len(analysis.FilesToModify) > 0 {
 		fmt.Println()
-		pterm.DefaultSection.Println("📂 预计变更文件")
-		
+		pterm.Info.Println("📂 预计变更文件:")
+
 		for _, file := range analysis.FilesToModify {
-			pterm.Success.Println(file)
+			fmt.Printf("  %s %s\n", pterm.Green("→"), file)
 		}
 	}
 
+	// 5. Execution mode hint
 	fmt.Println()
-	pterm.DefaultHeader.WithFullWidth().WithMargin(1).Println("准备移交执行引擎 (Phase 2)")
+	if analysis.EstimatedLevel >= 3 {
+		pterm.DefaultBox.WithTitle("🚀 执行模式").Println(
+			"多 Agent 协作模式\nSupervisor → Coder × N → Tester → Reviewer")
+	} else {
+		pterm.DefaultBox.WithTitle("🚀 执行模式").Println(
+			"单 Agent 高效模式\nCoder Agent → 自动构建验证")
+	}
+
+	// 6. User confirmation
+	fmt.Println()
+	result, _ := pterm.DefaultInteractiveConfirm.
+		WithDefaultText("确认执行此任务?").
+		WithDefaultValue(true).
+		Show()
+
+	if !result {
+		pterm.Warning.Println("已取消执行")
+	} else {
+		fmt.Println()
+		pterm.Success.Println("任务已确认，开始执行...")
+	}
+
+	return result
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/awch-D/ForgeX/forgex-agent/tester"
 	"github.com/awch-D/ForgeX/forgex-core/config"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
-	"github.com/awch-D/ForgeX/forgex-gear"
+	gear "github.com/awch-D/ForgeX/forgex-gear"
 	"github.com/awch-D/ForgeX/forgex-intent/clarifier"
 	"github.com/awch-D/ForgeX/forgex-intent/confirmation"
 	"github.com/awch-D/ForgeX/forgex-llm/cost"
@@ -24,6 +24,15 @@ import (
 )
 
 const version = "0.3.0-alpha"
+
+func showBanner() {
+	pterm.DefaultBigText.WithLetters(
+		pterm.NewLettersFromStringWithStyle("Forge", pterm.NewStyle(pterm.FgCyan)),
+		pterm.NewLettersFromStringWithStyle("X", pterm.NewStyle(pterm.FgLightRed)),
+	).Render()
+	pterm.DefaultCenter.Println(pterm.LightCyan("⚡ Local-First AI Programmer • v" + version))
+	fmt.Println()
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "forgex",
@@ -72,10 +81,16 @@ var runCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		initialPrompt := args[0]
 
+		showBanner()
+
 		cfg, err := config.Load()
 		if err != nil {
 			logger.L().Fatalw("Failed to load config", "error", err)
 		}
+
+		pterm.Info.Printf("🤖 模型: %s\n", pterm.LightCyan(cfg.LLM.Model))
+		pterm.Info.Printf("📝 任务: %s\n", pterm.LightYellow(initialPrompt))
+		fmt.Println()
 
 		logger.L().Infow("ForgeX initialized", "LLM", cfg.LLM.Provider, "Model", cfg.LLM.Model, "Task", initialPrompt)
 
@@ -89,7 +104,10 @@ var runCmd = &cobra.Command{
 			logger.L().Fatalw("Clarifier failed", "error", err)
 		}
 
-		confirmation.RenderCard(analysis)
+		confirmed := confirmation.RenderCard(analysis)
+		if !confirmed {
+			return
+		}
 
 		_, intentCost := cost.Global().Summary()
 		logger.L().Infof("🧠 意图分析花费: 约 $%.4f", intentCost)

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pterm/pterm"
@@ -178,6 +180,10 @@ func (a *Agent) execute(ctx context.Context, taskPrompt string) (filesCreated []
 		if agentResp.Done {
 			fmt.Println()
 			pterm.DefaultBox.WithTitle("✅ 任务完成").Println(agentResp.Summary)
+			// Render file tree
+			if len(agentResp.FilesCreated) > 0 {
+				renderFileTree(agentResp.FilesCreated)
+			}
 			return agentResp.FilesCreated, agentResp.Summary, nil
 		}
 
@@ -191,7 +197,24 @@ func (a *Agent) execute(ctx context.Context, taskPrompt string) (filesCreated []
 		toolResultsSB.WriteString("Tool execution results:\n")
 
 		for j, tc := range agentResp.ToolCalls {
-			pterm.Success.Printf("  🔧 [%d] %s\n", j+1, tc.Name)
+			// Rich tool output
+			switch tc.Name {
+			case "write_file":
+				bytes := len(tc.Args["content"])
+				pterm.Success.Printf("  📄 [%d] 写入 %s (%d bytes)\n", j+1, pterm.LightCyan(tc.Args["path"]), bytes)
+			case "run_command":
+				cmd := tc.Args["command"]
+				if len(cmd) > 60 {
+					cmd = cmd[:60] + "..."
+				}
+				pterm.Success.Printf("  ⚡ [%d] 执行 %s\n", j+1, pterm.LightYellow(cmd))
+			case "read_file":
+				pterm.Success.Printf("  📖 [%d] 读取 %s\n", j+1, pterm.LightCyan(tc.Args["path"]))
+			case "list_dir":
+				pterm.Success.Printf("  📂 [%d] 列目录 %s\n", j+1, tc.Args["path"])
+			default:
+				pterm.Success.Printf("  🔧 [%d] %s\n", j+1, tc.Name)
+			}
 			result := a.registry.Execute(tc.Name, tc.Args)
 
 			status := "✅ success"
@@ -233,4 +256,41 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderFileTree renders a tree of created files using pterm.
+func renderFileTree(files []string) {
+	if len(files) == 0 {
+		return
+	}
+
+	sort.Strings(files)
+
+	// Build tree structure
+	root := pterm.TreeNode{Text: "📂 生成文件", Children: []pterm.TreeNode{}}
+	dirs := make(map[string]*pterm.TreeNode)
+
+	for _, f := range files {
+		dir := filepath.Dir(f)
+		base := filepath.Base(f)
+
+		if dir == "." || dir == "" {
+			root.Children = append(root.Children, pterm.TreeNode{Text: "📄 " + base})
+		} else {
+			if _, ok := dirs[dir]; !ok {
+				dirNode := &pterm.TreeNode{Text: "📁 " + dir + "/", Children: []pterm.TreeNode{}}
+				dirs[dir] = dirNode
+				root.Children = append(root.Children, *dirNode)
+			}
+			// Find and update the dir node in root.Children
+			for k := range root.Children {
+				if root.Children[k].Text == "📁 "+dir+"/" {
+					root.Children[k].Children = append(root.Children[k].Children, pterm.TreeNode{Text: "📄 " + base})
+				}
+			}
+		}
+	}
+
+	fmt.Println()
+	pterm.DefaultTree.WithRoot(root).Render()
 }
