@@ -35,9 +35,15 @@ type Options struct {
 	JSONMode    bool // If true, requires the LLM to output valid JSON
 }
 
+// EmbeddingOpts configuration for vector embedding generation.
+type EmbeddingOpts struct {
+	Model string
+}
+
 // Provider is the interface that varying LLM clients must implement.
 type Provider interface {
 	// Generate performs a single completion call.
 	Generate(ctx context.Context, messages []Message, opts *Options) (*Response, error)
-	// Additional streaming/tool calling signatures can be added later.
+	// Embed generates a vector embedding for the given text.
+	Embed(ctx context.Context, text string, opts *EmbeddingOpts) ([]float32, error)
 }

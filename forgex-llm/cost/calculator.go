@@ -28,10 +28,13 @@ type Pricing struct {
 
 // Global defaults for cost calculation. Actual prices can be updated later.
 var defaultPricing = map[string]Pricing{
-	"gpt-4o":               {InputPer1M: 5.0, OutputPer1M: 15.0},
-	"claude-3-5-sonnet":    {InputPer1M: 3.0, OutputPer1M: 15.0},
-	"deepseek-coder-v2":    {InputPer1M: 0.14, OutputPer1M: 0.28},
-	"ollama":               {InputPer1M: 0.0, OutputPer1M: 0.0},
+	"gpt-4o":                 {InputPer1M: 5.0, OutputPer1M: 15.0},
+	"gpt-4o-mini":            {InputPer1M: 0.15, OutputPer1M: 0.6},
+	"claude-3-5-sonnet":      {InputPer1M: 3.0, OutputPer1M: 15.0},
+	"deepseek-coder-v2":      {InputPer1M: 0.14, OutputPer1M: 0.28},
+	"text-embedding-3-small": {InputPer1M: 0.02, OutputPer1M: 0.0},
+	"text-embedding-3-large": {InputPer1M: 0.13, OutputPer1M: 0.0},
+	"ollama":                 {InputPer1M: 0.0, OutputPer1M: 0.0},
 }
 
 var (
@@ -66,17 +69,17 @@ func (l *Ledger) Add(model string, promptTokens, outputTokens int) {
 
 	cost := (float64(promptTokens)/1_000_000.0)*price.InputPer1M +
 		(float64(outputTokens)/1_000_000.0)*price.OutputPer1M
-	
+
 	l.TotalCostUSD += cost
 
 	go func(c float64) {
-	    logger.L().Debugw("Token usage recorded",
-		    "model", model,
-		    "prompt", promptTokens,
-		    "output", outputTokens,
-		    "cost_usd", c,
-	    )
-    }(cost)
+		logger.L().Debugw("Token usage recorded",
+			"model", model,
+			"prompt", promptTokens,
+			"output", outputTokens,
+			"cost_usd", c,
+		)
+	}(cost)
 }
 
 // Summary returns a snapshot of current usage.

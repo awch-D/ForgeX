@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/awch-D/ForgeX/forgex-agent v0.0.0-20260302140914-9af2006892d2
 	github.com/awch-D/ForgeX/forgex-core v0.0.0-20260302140914-9af2006892d2
+	github.com/awch-D/ForgeX/forgex-llm v0.0.0-20260302131708-09576bd8fefd
 	github.com/mattn/go-sqlite3 v1.14.34
 )
 

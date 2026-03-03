@@ -2,6 +2,8 @@ github.com/awch-D/ForgeX/forgex-agent v0.0.0-20260302140914-9af2006892d2 h1:XqDK
 github.com/awch-D/ForgeX/forgex-agent v0.0.0-20260302140914-9af2006892d2/go.mod h1:uTdmB1wdnuSnyhH7WMwJIBgq/NhdBeUTkanGm9jDgjo=
 github.com/awch-D/ForgeX/forgex-core v0.0.0-20260302140914-9af2006892d2 h1:O+Hsw23CqzPzczrIvmnetnP4+jtZ+Ww55ebam8fOnfc=
 github.com/awch-D/ForgeX/forgex-core v0.0.0-20260302140914-9af2006892d2/go.mod h1:zCuGZvDCw0OJz0WcRF2vtb9l188fqcg504o56188apE=
+github.com/awch-D/ForgeX/forgex-llm v0.0.0-20260302131708-09576bd8fefd h1:sYxqVTXuOF3a7clHaGruzll35+mXB5AdMN6Ban1WSTs=
+github.com/awch-D/ForgeX/forgex-llm v0.0.0-20260302131708-09576bd8fefd/go.mod h1:eFcsPKR9XhvSX0LpWE/I23ZRBNGz6C4i19xSwXTvnw0=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/mattn/go-sqlite3 v1.14.34 h1:3NtcvcUnFBPsuRcno8pUtupspG/GM+9nZ88zgJcp6Zk=
@@ -9,6 +11,7 @@ github.com/mattn/go-sqlite3 v1.14.34/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxU
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
+github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.uber.org/multierr v1.10.0 h1:S0h4aNzvfcFsC3dRF1jLoaov7oRaKqRGC/pUEJ2yvPQ=
