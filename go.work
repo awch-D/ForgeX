@@ -11,5 +11,6 @@ use (
 	./forgex-intent
 	./forgex-llm
 	./forgex-mcp
+	./forgex-sandbox
 	./test/e2e
 )

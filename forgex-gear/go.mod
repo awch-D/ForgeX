@@ -9,6 +9,7 @@ require (
 
 require (
 	github.com/awch-D/ForgeX/forgex-llm v0.0.0-20260302101247-594dca1eb857 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 )

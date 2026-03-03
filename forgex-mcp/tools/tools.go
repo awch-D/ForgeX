@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,16 +12,17 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"context"
 
 	"github.com/awch-D/ForgeX/forgex-core/logger"
+	"github.com/awch-D/ForgeX/forgex-governance/audit"
+	"github.com/awch-D/ForgeX/forgex-governance/safety"
 )
 
 // Tool represents a callable tool available to agents.
 type Tool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]ParamSpec   `json:"parameters"`
+	Name        string               `json:"name"`
+	Description string               `json:"description"`
+	Parameters  map[string]ParamSpec `json:"parameters"`
 }
 
 // ParamSpec describes a tool parameter.
@@ -39,20 +41,33 @@ type ToolResult struct {
 
 // Registry holds all available tools.
 type Registry struct {
-	tools   map[string]Tool
-	execFn  map[string]func(args map[string]string) *ToolResult
-	workDir string
+	tools            map[string]Tool
+	execFn           map[string]func(args map[string]string) *ToolResult
+	workDir          string
+	autoApproveLevel safety.Level
+	auditLogger      *audit.Logger
 }
 
 // NewRegistry creates a new tool registry rooted at the given working directory.
 func NewRegistry(workDir string) *Registry {
 	r := &Registry{
-		tools:   make(map[string]Tool),
-		execFn:  make(map[string]func(args map[string]string) *ToolResult),
-		workDir: workDir,
+		tools:            make(map[string]Tool),
+		execFn:           make(map[string]func(args map[string]string) *ToolResult),
+		workDir:          workDir,
+		autoApproveLevel: safety.Yellow, // default: auto-approve green + yellow
 	}
 	r.registerBuiltins()
 	return r
+}
+
+// SetAutoApproveLevel configures the safety auto-approve threshold.
+func (r *Registry) SetAutoApproveLevel(level safety.Level) {
+	r.autoApproveLevel = level
+}
+
+// SetAuditLogger configures audit logging for tool invocations.
+func (r *Registry) SetAuditLogger(l *audit.Logger) {
+	r.auditLogger = l
 }
 
 // ListTools returns the schema of all registered tools (for LLM context).
@@ -81,20 +96,52 @@ func (r *Registry) ToolsForLLM() string {
 	return sb.String()
 }
 
-// Execute invokes a tool by name.
+// Execute invokes a tool by name with safety classification and audit logging.
 func (r *Registry) Execute(name string, args map[string]string) *ToolResult {
 	fn, ok := r.execFn[name]
 	if !ok {
 		return &ToolResult{Success: false, Error: fmt.Sprintf("unknown tool: %s", name)}
 	}
-	logger.L().Infow("🔧 Tool invoked", "tool", name, "args", args)
+
+	// Safety classification
+	level := safety.Classify(name, args)
+
+	if level.IsBlocked() {
+		logger.L().Warnw(safety.FormatDecision(name, level, false), "args", args)
+		r.recordAudit(name, args, level, false, false, "operation blocked by safety policy")
+		return &ToolResult{Success: false, Error: fmt.Sprintf("⚫ BLOCKED: %s is classified as %s and cannot be executed", name, level.String())}
+	}
+
+	logger.L().Infow("🔧 Tool invoked",
+		"tool", name, "safety", level.String(), "args", args)
+
 	result := fn(args)
+
 	if result.Success {
 		logger.L().Infow("✅ Tool succeeded", "tool", name, "output_len", len(result.Output))
 	} else {
 		logger.L().Warnw("❌ Tool failed", "tool", name, "error", result.Error)
 	}
+
+	// Audit logging
+	r.recordAudit(name, args, level, true, result.Success, result.Error)
+
 	return result
+}
+
+func (r *Registry) recordAudit(name string, args map[string]string, level safety.Level, approved, success bool, errStr string) {
+	if r.auditLogger == nil {
+		return
+	}
+	argsJSON, _ := json.Marshal(args)
+	_ = r.auditLogger.Record(audit.Entry{
+		ToolName:    name,
+		Args:        string(argsJSON),
+		SafetyLevel: level,
+		Approved:    approved,
+		Success:     success,
+		Error:       errStr,
+	})
 }
 
 func (r *Registry) registerBuiltins() {
