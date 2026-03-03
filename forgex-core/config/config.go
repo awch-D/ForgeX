@@ -27,12 +27,29 @@ type Config struct {
 
 // LLMConfig holds LLM routing configuration.
 type LLMConfig struct {
-	Provider    string `mapstructure:"provider"`     // "litellm", "ollama", "claude"
-	Endpoint    string `mapstructure:"endpoint"`     // API endpoint
-	APIKey      string `mapstructure:"api_key"`      // API key (for cloud providers)
-	Model       string `mapstructure:"model"`        // Default model name
-	MaxTokens   int    `mapstructure:"max_tokens"`   // Max tokens per request
+	Provider    string  `mapstructure:"provider"`    // "litellm", "ollama", "claude"
+	Endpoint    string  `mapstructure:"endpoint"`    // API endpoint
+	APIKey      string  `mapstructure:"api_key"`     // API key (for cloud providers)
+	Model       string  `mapstructure:"model"`       // Default model name
+	MaxTokens   int     `mapstructure:"max_tokens"`  // Max tokens per request
 	Temperature float64 `mapstructure:"temperature"` // Default temperature
+
+	// Router enables multi-model intelligent routing.
+	Router *RouterConfig `mapstructure:"router"`
+}
+
+// RouterConfig defines multi-model routing.
+type RouterConfig struct {
+	Strategy string        `mapstructure:"strategy"` // "gear", "cheapest", "fallback"
+	Models   []ModelConfig `mapstructure:"models"`
+}
+
+// ModelConfig defines a single model endpoint.
+type ModelConfig struct {
+	Name     string `mapstructure:"name"`
+	Endpoint string `mapstructure:"endpoint"`
+	APIKey   string `mapstructure:"api_key"`
+	Tier     string `mapstructure:"tier"` // "high", "low"
 }
 
 // SandboxConfig holds sandbox execution configuration.

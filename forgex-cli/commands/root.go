@@ -14,13 +14,18 @@ import (
 	"github.com/awch-D/ForgeX/forgex-agent/protocol"
 	"github.com/awch-D/ForgeX/forgex-agent/supervisor"
 	"github.com/awch-D/ForgeX/forgex-agent/tester"
+	"github.com/awch-D/ForgeX/forgex-cognition/graph"
 	"github.com/awch-D/ForgeX/forgex-core/config"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
+	evolution "github.com/awch-D/ForgeX/forgex-evolution"
 	gear "github.com/awch-D/ForgeX/forgex-gear"
+	"github.com/awch-D/ForgeX/forgex-intent/archaeology"
 	"github.com/awch-D/ForgeX/forgex-intent/clarifier"
 	"github.com/awch-D/ForgeX/forgex-intent/confirmation"
 	"github.com/awch-D/ForgeX/forgex-llm/cost"
 	"github.com/awch-D/ForgeX/forgex-llm/litellm"
+	"github.com/awch-D/ForgeX/forgex-llm/provider"
+	"github.com/awch-D/ForgeX/forgex-llm/router"
 	"github.com/awch-D/ForgeX/forgex-mcp/tools"
 	"github.com/awch-D/ForgeX/forgex-server/bus"
 )
@@ -100,8 +105,14 @@ var runCmd = &cobra.Command{
 
 		logger.L().Infow("ForgeX initialized", "LLM", cfg.LLM.Provider, "Model", cfg.LLM.Model, "Task", initialPrompt)
 
-		// Initialize LLM Provider
-		llmProvider := litellm.NewClient(&cfg.LLM)
+		// Initialize LLM Provider (with optional Router)
+		var llmProvider provider.Provider
+		if cfg.LLM.Router != nil && len(cfg.LLM.Router.Models) > 0 {
+			llmProvider = router.New(cfg.LLM.Router, &cfg.LLM)
+			pterm.Info.Println("🔀 LLM 路由器已启用")
+		} else {
+			llmProvider = litellm.NewClient(&cfg.LLM)
+		}
 
 		// Phase 1: Intent Clarification
 		ctx := cmd.Context()
@@ -138,6 +149,12 @@ var runCmd = &cobra.Command{
 		eventBus := protocol.NewEventBus()
 		defer eventBus.Close()
 
+		// Build architecture graph
+		graphStore := graph.NewStore()
+		pterm.Info.Println("🏗 正在扫描代码架构图谱...")
+		archBuilder := archaeology.NewBuilder(graphStore)
+		_ = archBuilder.Build(absWorkDir)
+
 		if dashPort > 0 {
 			hub := bus.NewHub(eventBus)
 			go hub.Run()
@@ -158,8 +175,8 @@ var runCmd = &cobra.Command{
 			agentPool := pool.NewPool(eventBus)
 
 			// Register agents
-			sup := supervisor.New(llmProvider, eventBus, analysis)
-			coderAgent := coder.NewWithBus(llmProvider, registry, eventBus)
+			sup := supervisor.New(llmProvider, eventBus, analysis, graphStore)
+			coderAgent := coder.NewWithBus(llmProvider, registry, eventBus, graphStore)
 			testerAgent := tester.New(eventBus, registry)
 
 			agentPool.Register(sup)
@@ -179,10 +196,21 @@ var runCmd = &cobra.Command{
 			pterm.DefaultSection.Println("🚀 单 Agent 模式")
 			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
 
-			agent := coder.NewWithBus(llmProvider, registry, eventBus)
+			agent := coder.NewWithBus(llmProvider, registry, eventBus, graphStore)
 			if err := agent.RunStandalone(ctx, analysis); err != nil {
 				logger.L().Fatalw("Coder Agent failed", "error", err)
 			}
+		}
+
+		// Evolution: evaluate code quality
+		evolver := evolution.NewEvolver()
+		pterm.DefaultSection.Println("📊 进化引擎: 评估代码质量")
+		evoScore := evolver.Evaluate(absWorkDir)
+		if evolver.ShouldRetry(evoScore) {
+			pterm.Warning.Printf("⚠️ 代码质量评分: %.0f%% (低于阈值)\n", evoScore.Total*100)
+			pterm.Info.Println("💡 建议: 重新运行 forgex run 以获得更好的结果")
+		} else {
+			pterm.Success.Printf("✅ 代码质量评分: %.0f%%\n", evoScore.Total*100)
 		}
 
 		// Final cost summary

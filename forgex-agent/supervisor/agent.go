@@ -13,6 +13,7 @@ import (
 	"github.com/pterm/pterm"
 
 	"github.com/awch-D/ForgeX/forgex-agent/protocol"
+	"github.com/awch-D/ForgeX/forgex-cognition/graph"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
 	"github.com/awch-D/ForgeX/forgex-intent/parser"
 	"github.com/awch-D/ForgeX/forgex-llm/provider"
@@ -47,16 +48,18 @@ type Agent struct {
 	bus      *protocol.EventBus
 	inbox    <-chan protocol.Message
 	analysis *parser.TaskAnalysis
+	graph    *graph.Store
 }
 
 // New creates a supervisor agent.
-func New(llm provider.Provider, bus *protocol.EventBus, analysis *parser.TaskAnalysis) *Agent {
+func New(llm provider.Provider, bus *protocol.EventBus, analysis *parser.TaskAnalysis, g *graph.Store) *Agent {
 	inbox := bus.Subscribe(protocol.RoleSupervisor, 50)
 	return &Agent{
 		llm:      llm,
 		bus:      bus,
 		inbox:    inbox,
 		analysis: analysis,
+		graph:    g,
 	}
 }
 
@@ -81,8 +84,14 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	// Step 1: Decompose the task via LLM
 	taskJSON, _ := json.MarshalIndent(a.analysis, "", "  ")
+
+	systemPrompt := supervisorPrompt
+	if a.graph != nil {
+		systemPrompt += a.graph.BuildSummary()
+	}
+
 	messages := []provider.Message{
-		{Role: provider.RoleSystem, Content: supervisorPrompt},
+		{Role: provider.RoleSystem, Content: systemPrompt},
 		{Role: provider.RoleUser, Content: fmt.Sprintf("Decompose this task:\n\n%s", string(taskJSON))},
 	}
 

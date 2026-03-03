@@ -14,6 +14,7 @@ import (
 	"github.com/pterm/pterm"
 
 	"github.com/awch-D/ForgeX/forgex-agent/protocol"
+	"github.com/awch-D/ForgeX/forgex-cognition/graph"
 	"github.com/awch-D/ForgeX/forgex-core/logger"
 	"github.com/awch-D/ForgeX/forgex-intent/parser"
 	"github.com/awch-D/ForgeX/forgex-llm/provider"
@@ -60,18 +61,19 @@ type Agent struct {
 	registry *tools.Registry
 	bus      *protocol.EventBus
 	inbox    <-chan protocol.Message
+	graph    *graph.Store
 }
 
 // New creates a new Coder Agent.
 // If bus is nil, runs in standalone (Phase 2) mode.
-func New(llm provider.Provider, registry *tools.Registry) *Agent {
-	return &Agent{llm: llm, registry: registry}
+func New(llm provider.Provider, registry *tools.Registry, g *graph.Store) *Agent {
+	return &Agent{llm: llm, registry: registry, graph: g}
 }
 
 // NewWithBus creates a Coder Agent wired to the EventBus (Phase 3 mode).
-func NewWithBus(llm provider.Provider, registry *tools.Registry, bus *protocol.EventBus) *Agent {
+func NewWithBus(llm provider.Provider, registry *tools.Registry, bus *protocol.EventBus, g *graph.Store) *Agent {
 	inbox := bus.Subscribe(protocol.RoleCoder, 50)
-	return &Agent{llm: llm, registry: registry, bus: bus, inbox: inbox}
+	return &Agent{llm: llm, registry: registry, bus: bus, inbox: inbox, graph: g}
 }
 
 func (a *Agent) Role() protocol.AgentRole { return protocol.RoleCoder }
@@ -143,8 +145,13 @@ func (a *Agent) RunStandalone(ctx context.Context, analysis *parser.TaskAnalysis
 
 // execute is the core LLM tool-use loop.
 func (a *Agent) execute(ctx context.Context, taskPrompt string) (filesCreated []string, summary string, err error) {
+	sysContent := coderSystemPrompt + "\n\n" + a.registry.ToolsForLLM()
+	if a.graph != nil {
+		sysContent += a.graph.BuildSummary()
+	}
+
 	history := []provider.Message{
-		{Role: provider.RoleSystem, Content: coderSystemPrompt + "\n\n" + a.registry.ToolsForLLM()},
+		{Role: provider.RoleSystem, Content: sysContent},
 		{Role: provider.RoleUser, Content: taskPrompt},
 	}
 
