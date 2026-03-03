@@ -89,7 +89,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	resp, err := a.llm.Generate(ctx, messages, &provider.Options{
 		Temperature: 0.3,
 		JSONMode:    true,
-		MaxTokens:   4096,
+		MaxTokens:   8192,
 	})
 	if err != nil {
 		return fmt.Errorf("supervisor LLM call: %w", err)
@@ -136,7 +136,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	totalTasks := len(plan.Tasks)
 	var allResults []protocol.ResultPayload
 
-	timeout := time.After(5 * time.Minute)
+	timeout := time.After(10 * time.Minute)
 
 	for completedTasks < totalTasks {
 		select {

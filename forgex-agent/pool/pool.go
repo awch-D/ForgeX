@@ -21,17 +21,19 @@ type Agent interface {
 
 // Pool manages a set of agent goroutines.
 type Pool struct {
-	mu     sync.Mutex
-	agents []Agent
-	bus    *protocol.EventBus
-	wg     sync.WaitGroup
-	cancel context.CancelFunc
+	mu       sync.Mutex
+	agents   []Agent
+	bus      *protocol.EventBus
+	wg       sync.WaitGroup
+	cancel   context.CancelFunc
+	roleDone map[protocol.AgentRole]chan struct{} // per-role completion signals
 }
 
 // NewPool creates a new agent pool with the given event bus.
 func NewPool(bus *protocol.EventBus) *Pool {
 	return &Pool{
-		bus: bus,
+		bus:      bus,
+		roleDone: make(map[protocol.AgentRole]chan struct{}),
 	}
 }
 
@@ -40,6 +42,7 @@ func (p *Pool) Register(agent Agent) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.agents = append(p.agents, agent)
+	p.roleDone[agent.Role()] = make(chan struct{})
 	logger.L().Infow("🏊 Pool: agent registered", "role", agent.Role())
 }
 
@@ -61,6 +64,16 @@ func (p *Pool) Wait() {
 	p.wg.Wait()
 }
 
+// WaitForRole blocks until a specific agent role finishes its Run method.
+func (p *Pool) WaitForRole(role protocol.AgentRole) {
+	p.mu.Lock()
+	ch, ok := p.roleDone[role]
+	p.mu.Unlock()
+	if ok {
+		<-ch
+	}
+}
+
 // Shutdown signals all agents to stop and waits for them.
 func (p *Pool) Shutdown() {
 	if p.cancel != nil {
@@ -73,9 +86,16 @@ func (p *Pool) Shutdown() {
 func (p *Pool) runAgent(ctx context.Context, a Agent) {
 	defer p.wg.Done()
 	defer func() {
+		// Signal that this role is done
+		p.mu.Lock()
+		if ch, ok := p.roleDone[a.Role()]; ok {
+			close(ch)
+		}
+		p.mu.Unlock()
+	}()
+	defer func() {
 		if r := recover(); r != nil {
 			logger.L().Errorw("💥 Agent panicked!", "role", a.Role(), "panic", fmt.Sprint(r))
-			// Publish error to bus so Supervisor knows
 			p.bus.Publish(ctx, protocol.Message{
 				Sender:  a.Role(),
 				Type:    protocol.MsgError,
@@ -87,11 +107,6 @@ func (p *Pool) runAgent(ctx context.Context, a Agent) {
 	logger.L().Infow("▶️  Agent started", "role", a.Role())
 	if err := a.Run(ctx); err != nil {
 		logger.L().Errorw("Agent exited with error", "role", a.Role(), "error", err)
-		p.bus.Publish(ctx, protocol.Message{
-			Sender:  a.Role(),
-			Type:    protocol.MsgError,
-			Payload: err.Error(),
-		})
 	} else {
 		logger.L().Infow("✅ Agent completed", "role", a.Role())
 	}

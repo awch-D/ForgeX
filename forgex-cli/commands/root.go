@@ -116,7 +116,6 @@ var runCmd = &cobra.Command{
 			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
 
 			bus := protocol.NewEventBus()
-			defer bus.Close()
 
 			agentPool := pool.NewPool(bus)
 
@@ -131,7 +130,12 @@ var runCmd = &cobra.Command{
 
 			// Start all agents
 			agentPool.Start(ctx)
-			agentPool.Wait()
+
+			// Wait for Supervisor (first registered agent) to finish,
+			// then gracefully shut down the remaining agents.
+			agentPool.WaitForRole(protocol.RoleSupervisor)
+			agentPool.Shutdown()
+			bus.Close()
 
 		} else {
 			// ===== Phase 2: Single Agent Mode =====

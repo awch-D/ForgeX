@@ -46,6 +46,7 @@ You MUST respond in JSON with exactly one of these two formats:
 ## Rules
 - Write COMPLETE, PRODUCTION-QUALITY code. No placeholders, no TODOs.
 - Create all necessary files including go.mod if needed.
+- IMPORTANT: Always use GOWORK=off prefix for go build/test/vet/get commands (e.g. "GOWORK=off go build ./...") because there may be a parent go.work file that interferes.
 - After writing code, run build commands to verify.
 - If a build fails, read the error and fix the code.
 - Maximum iterations: 15.

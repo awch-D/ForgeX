@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/awch-D/ForgeX/forgex-core/config"
 	fxerr "github.com/awch-D/ForgeX/forgex-core/errors"
@@ -45,7 +46,9 @@ func NewClient(cfg *config.LLMConfig) *Client {
 			Temperature: cfg.Temperature,
 			MaxTokens:   cfg.MaxTokens,
 		},
-		httpClient: &http.Client{},
+		httpClient: &http.Client{
+			Timeout: 3 * time.Minute, // prevent API proxy hangs
+		},
 	}
 }
 
@@ -100,7 +103,7 @@ func (c *Client) generateAnthropic(ctx context.Context, messages []provider.Mess
 	}
 	maxTokens := opts.MaxTokens
 	if maxTokens == 0 {
-		maxTokens = 4096
+		maxTokens = 16384
 	}
 
 	// Separate system message from conversation messages
