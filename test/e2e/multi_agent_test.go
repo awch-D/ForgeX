@@ -281,3 +281,204 @@ func TestMultiAgent_TimeoutHandling(t *testing.T) {
 		t.Fatal("agents did not exit on context cancellation")
 	}
 }
+
+// --- Reviewer Agent mock ---
+
+type reviewerAgent struct {
+	bus   *protocol.EventBus
+	inbox <-chan protocol.Message
+}
+
+func (a *reviewerAgent) Role() protocol.AgentRole { return protocol.RoleReviewer }
+func (a *reviewerAgent) Run(ctx context.Context) error {
+	for {
+		select {
+		case msg, ok := <-a.inbox:
+			if !ok {
+				return nil
+			}
+			if msg.Type == protocol.MsgReview {
+				a.bus.Publish(ctx, protocol.Message{
+					Sender:   protocol.RoleReviewer,
+					Receiver: protocol.RoleSupervisor,
+					Type:     protocol.MsgReview,
+					Payload: protocol.ReviewPayload{
+						TaskID:   "review-all",
+						Score:    85,
+						Passed:   true,
+						Feedback: "Code quality is good, minor style issues.",
+					},
+				})
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+// --- Supervisor with Reviewer support ---
+
+type supervisorWithReviewerAgent struct {
+	bus            *protocol.EventBus
+	inbox          <-chan protocol.Message
+	reviewReceived bool
+	mu             sync.Mutex
+}
+
+func (a *supervisorWithReviewerAgent) Role() protocol.AgentRole { return protocol.RoleSupervisor }
+func (a *supervisorWithReviewerAgent) Run(ctx context.Context) error {
+	// Step 1: Dispatch task to coder
+	a.bus.Publish(ctx, protocol.Message{
+		ID:       "task-review-1",
+		Sender:   protocol.RoleSupervisor,
+		Receiver: protocol.RoleCoder,
+		Type:     protocol.MsgTask,
+		Payload: protocol.TaskPayload{
+			TaskID:      "task-review-1",
+			Description: "Create service.go",
+			Priority:    1,
+		},
+	})
+
+	// Step 2: Wait for coder result
+	for {
+		select {
+		case msg := <-a.inbox:
+			if msg.Type == protocol.MsgResult {
+				goto testPhase
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+testPhase:
+	// Step 3: Request test
+	a.bus.Publish(ctx, protocol.Message{
+		Sender:   protocol.RoleSupervisor,
+		Receiver: protocol.RoleTester,
+		Type:     protocol.MsgTest,
+	})
+
+	for {
+		select {
+		case msg := <-a.inbox:
+			if msg.Type == protocol.MsgTest {
+				goto reviewPhase
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+reviewPhase:
+	// Step 4: Request review (NEW - tests Reviewer integration)
+	a.bus.Publish(ctx, protocol.Message{
+		Sender:   protocol.RoleSupervisor,
+		Receiver: protocol.RoleReviewer,
+		Type:     protocol.MsgReview,
+	})
+
+	for {
+		select {
+		case msg := <-a.inbox:
+			if msg.Type == protocol.MsgReview {
+				a.mu.Lock()
+				a.reviewReceived = true
+				a.mu.Unlock()
+				goto complete
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+complete:
+	a.bus.Publish(ctx, protocol.Message{
+		Sender: protocol.RoleSupervisor,
+		Type:   protocol.MsgComplete,
+	})
+	return nil
+}
+
+func TestMultiAgent_ReviewerIntegration(t *testing.T) {
+	bus := protocol.NewEventBus()
+	defer bus.Close()
+
+	drafts := draft.NewStore()
+	allMsgs := bus.SubscribeAll(100)
+
+	supInbox := bus.Subscribe(protocol.RoleSupervisor, 50)
+	sup := &supervisorWithReviewerAgent{bus: bus, inbox: supInbox}
+
+	coderInbox := bus.Subscribe(protocol.RoleCoder, 50)
+	cdr := &coderAgent{bus: bus, inbox: coderInbox, drafts: drafts}
+
+	testerInbox := bus.Subscribe(protocol.RoleTester, 50)
+	tstr := &testerAgent{bus: bus, inbox: testerInbox}
+
+	reviewerInbox := bus.Subscribe(protocol.RoleReviewer, 50)
+	rvw := &reviewerAgent{bus: bus, inbox: reviewerInbox}
+
+	p := pool.NewPool(bus)
+	p.Register(sup)
+	p.Register(cdr)
+	p.Register(tstr)
+	p.Register(rvw)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	p.Start(ctx)
+	p.WaitForRole(protocol.RoleSupervisor)
+	p.Shutdown()
+
+	// Verify Supervisor received review
+	sup.mu.Lock()
+	if !sup.reviewReceived {
+		t.Error("expected supervisor to receive review feedback from reviewer")
+	}
+	sup.mu.Unlock()
+
+	// Verify message flow includes MsgReview
+	var hasReview, hasComplete bool
+	for {
+		select {
+		case msg := <-allMsgs:
+			if msg.Type == protocol.MsgReview {
+				hasReview = true
+			}
+			if msg.Type == protocol.MsgComplete {
+				hasComplete = true
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if !hasReview {
+		t.Error("expected MsgReview in message flow")
+	}
+	if !hasComplete {
+		t.Error("expected MsgComplete in message flow")
+	}
+}
+
+func TestMultiAgent_EventBusClosedGracefully(t *testing.T) {
+	bus := protocol.NewEventBus()
+
+	// Subscribe before close
+	inbox := bus.Subscribe(protocol.RoleSupervisor, 10)
+
+	bus.Close()
+
+	// After close, channel should be closed and readable
+	select {
+	case _, ok := <-inbox:
+		if ok {
+			t.Error("expected channel to be closed after EventBus.Close()")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("channel not closed within timeout")
+	}
+}

@@ -1,7 +1,7 @@
 # ForgeX Architecture Documentation
 
-> **Last Updated**: 2026-03-03  
-> **Version**: v1.0 (Phase 5 Complete)
+> **Last Updated**: 2026-03-04  
+> **Version**: v1.1 (Phase 3 — Production Ready)
 
 ---
 
@@ -121,10 +121,16 @@ forgex run "task"
    ├─ Agent Loop: think → tool_call → result → iterate
    │    └─ Tools: write_file / run_command / read_file / list_dir
    │    └─ Safety belt check before each tool execution
+   │    └─ Audit logger records every invocation
+   │
+   ├─ Reviewer Agent: code review → score + feedback → iterate if needed
    │
    ├─ Evolution Engine: compile score + test score → retry if below threshold
+   │    └─ Budget guard check before each retry
+   │    └─ GOWORK=off for isolated Go builds
    │
    └─ Terminal Output: real-time EventBus → colored role-labeled display
+        └─ Cost summary + remaining budget + audit stats
 ```
 
 ### 4.2 Knowledge Graph Construction

@@ -6,7 +6,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-16%2F16%20PASS-brightgreen)](Makefile)
+[![Tests](https://img.shields.io/badge/Tests-114%20PASS-brightgreen)](Makefile)
 
 *用一句话描述你想要什么，ForgeX 自动帮你写代码、测试、审查，一条龙交付。*
 
@@ -26,6 +26,17 @@ cd ForgeX && make build
 ```
 
 ForgeX 会自动完成：意图分析 → 需求确认 → 挡位评估 → 代码生成 → 质量评分。
+
+```bash
+# 仅分析意图和评估挡位，不执行 Agent
+./build/forgex run --dry-run "重构 auth 模块"
+
+# 手动指定挡位等级 (1-4)
+./build/forgex run --gear-level 3 "实现 WebSocket 推送"
+
+# 指定输出目录
+./build/forgex run -o ./output "创建 CLI 工具"
+```
 
 ---
 

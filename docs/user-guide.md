@@ -77,6 +77,8 @@ llm:
 |------|------|------|
 | `forgex run <task>` | 执行编码任务 | `forgex run "写一个 TODO 工具"` |
 | `forgex run -o <dir> <task>` | 指定输出目录 | `forgex run -o ./out "写一个 API"` |
+| `forgex run --dry-run <task>` | 只解析意图和评级 | `forgex run --dry-run "重构模块"` |
+| `forgex run --gear-level N <task>` | 手动覆盖挡位(1-4) | `forgex run --gear-level 3 "写 API"` |
 | `forgex version` | 打印版本信息 | `forgex version` |
 
 ---
@@ -153,7 +155,8 @@ Coder Agent → 直接编码 → 输出文件
 Supervisor → 分解子任务
     ├── Coder #1 → 子任务 A
     ├── Coder #2 → 子任务 B
-    └── Tester → 验证结果
+    ├── Tester → 验证结果
+    └── Reviewer → 代码审查 → 评分 + 反馈
 ```
 
 **挡位评估维度**：
@@ -179,6 +182,15 @@ Supervisor → 分解子任务
 ### 错误防火墙
 - Agent 草稿中的错误逻辑被拦截
 - 只有通过验证的代码才能进入事实库
+
+### 进化引擎
+- 自动编译+运行测试，加权评分（编译 40% + 测试 60%）
+- 低于阈值自动重试，重试前检查预算
+- Go 项目自动注入 `GOWORK=off` 避免工作区干扰
+
+### 意图解析容错
+- LLM 返回非法 JSON 时自动重试一次
+- 两次失败后降级为纯文本模式，不中断流程
 
 ---
 

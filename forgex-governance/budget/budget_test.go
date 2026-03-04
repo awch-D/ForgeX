@@ -60,3 +60,33 @@ func TestGuard_Usage(t *testing.T) {
 		t.Error("usage string should not be empty")
 	}
 }
+
+func TestGuard_MaxBudget(t *testing.T) {
+	ledger := cost.Global()
+	ledger.Reset()
+
+	guard := budget.NewGuard(42.0, ledger)
+	if guard.MaxBudget() != 42.0 {
+		t.Errorf("expected max budget 42.0, got %.2f", guard.MaxBudget())
+	}
+}
+
+func TestGuard_StayExceededOnceTriggered(t *testing.T) {
+	ledger := cost.Global()
+	ledger.Reset()
+
+	guard := budget.NewGuard(0.0001, ledger)
+	ledger.Add("gpt-4o", 10000, 5000)
+
+	// First check triggers exceeded
+	err1 := guard.Check()
+	if err1 == nil {
+		t.Fatal("expected error on first check")
+	}
+
+	// Subsequent check should still return exceeded
+	err2 := guard.Check()
+	if err2 == nil {
+		t.Fatal("expected error to persist on second check")
+	}
+}
