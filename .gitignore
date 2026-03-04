@@ -1,5 +1,6 @@
 # Build artifacts
 /build/
+forgex-output/
 *.exe
 *.dll
 *.dylib

@@ -103,6 +103,16 @@ func formatPayload(msg protocol.Message) string {
 			return pterm.FgLightYellow.Sprint(s)
 		}
 
+	case protocol.MsgReview:
+		payloadJSON, _ := json.Marshal(msg.Payload)
+		var rp protocol.ReviewPayload
+		if json.Unmarshal(payloadJSON, &rp) == nil {
+			if rp.Passed {
+				return pterm.FgLightGreen.Sprintf("✅ 审查通过 (%d/100): %s", rp.Score, truncate(rp.Feedback, 80))
+			}
+			return pterm.FgLightYellow.Sprintf("⚠️ 审查建议 (%d/100): %s", rp.Score, truncate(rp.Feedback, 80))
+		}
+
 	case protocol.MsgComplete:
 		return pterm.FgLightGreen.Sprint("🏁 任务完成")
 	}
@@ -110,6 +120,15 @@ func formatPayload(msg protocol.Message) string {
 	// Fallback: show raw JSON
 	raw, _ := json.Marshal(msg.Payload)
 	return string(raw)
+}
+
+// truncate shortens s to max runes, appending "…" if cut.
+func truncate(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "…"
 }
 
 // PrintCostSummary prints a styled cost summary bar.

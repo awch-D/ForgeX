@@ -15,7 +15,8 @@ require (
 )
 
 require (
-	github.com/awch-D/ForgeX/forgex-governance v0.0.0 // indirect
+	github.com/awch-D/ForgeX/forgex-governance v0.0.0
+	github.com/awch-D/ForgeX/forgex-sandbox v0.0.0
 	github.com/mattn/go-sqlite3 v1.14.34 // indirect
 )
 
@@ -68,3 +69,5 @@ replace github.com/awch-D/ForgeX/forgex-mcp => ../forgex-mcp
 replace github.com/awch-D/ForgeX/forgex-governance => ../forgex-governance
 
 replace github.com/awch-D/ForgeX/forgex-server => ../forgex-server
+
+replace github.com/awch-D/ForgeX/forgex-sandbox => ../forgex-sandbox

@@ -5,6 +5,7 @@ package evolution
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -153,6 +154,7 @@ func (e *Evolver) tryTest(dir string) (output string, errMsg string) {
 func runCmd(dir string, name string, args ...string) string {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output)
@@ -163,6 +165,7 @@ func runCmd(dir string, name string, args ...string) string {
 func runCmdWithOutput(dir string, name string, args ...string) (string, string) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Sprintf("%s\n%s", string(output), err.Error())

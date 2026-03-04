@@ -140,10 +140,21 @@ func (r *Router) FallbackModel() string {
 
 // Generate implements provider.Provider.
 // It routes the request to the appropriate downstream client.
+// If opts.GearLevel > 0 and no explicit Model is set, model selection
+// is delegated to SelectModel to apply the configured routing strategy.
 func (r *Router) Generate(ctx context.Context, messages []provider.Message, opts *provider.Options) (*provider.Response, error) {
 	model := r.fallback
 	if opts != nil && opts.Model != "" {
+		// Caller explicitly requested a model; honour it.
 		model = opts.Model
+	} else if opts != nil && opts.GearLevel > 0 {
+		// Gear-aware routing: pick the model tier based on task complexity.
+		model = r.SelectModel(opts.GearLevel)
+		logger.L().Infow("🔀 Router: gear-aware model selected",
+			"gear_level", opts.GearLevel,
+			"model", model,
+			"strategy", string(r.strategy),
+		)
 	}
 
 	client, ok := r.clients[model]

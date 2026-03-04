@@ -16,6 +16,7 @@ import (
 	"github.com/awch-D/ForgeX/forgex-core/logger"
 	"github.com/awch-D/ForgeX/forgex-governance/audit"
 	"github.com/awch-D/ForgeX/forgex-governance/safety"
+	sandbox "github.com/awch-D/ForgeX/forgex-sandbox"
 )
 
 // Tool represents a callable tool available to agents.
@@ -46,6 +47,7 @@ type Registry struct {
 	workDir          string
 	autoApproveLevel safety.Level
 	auditLogger      *audit.Logger
+	executor         sandbox.Executor // sandboxed command execution backend
 }
 
 // NewRegistry creates a new tool registry rooted at the given working directory.
@@ -68,6 +70,13 @@ func (r *Registry) SetAutoApproveLevel(level safety.Level) {
 // SetAuditLogger configures audit logging for tool invocations.
 func (r *Registry) SetAuditLogger(l *audit.Logger) {
 	r.auditLogger = l
+}
+
+// SetExecutor configures the sandboxed command executor.
+// If not set, run_command falls back to plain exec.Command.
+func (r *Registry) SetExecutor(e sandbox.Executor) {
+	r.executor = e
+	logger.L().Infow("🔒 Sandbox executor configured", "backend", e.Name())
 }
 
 // ListTools returns the schema of all registered tools (for LLM context).
@@ -212,6 +221,24 @@ func (r *Registry) registerBuiltins() {
 			"command": {Type: "string", Description: "Shell command to execute", Required: true},
 		},
 	}, func(args map[string]string) *ToolResult {
+		// Prefer sandbox executor if configured
+		if r.executor != nil {
+			result, err := r.executor.Run(context.Background(), args["command"], sandbox.ExecOpts{
+				WorkDir: r.workDir,
+			})
+			if err != nil {
+				return &ToolResult{Success: false, Error: err.Error()}
+			}
+			if result.TimedOut {
+				return &ToolResult{Success: false, Output: result.Output, Error: result.Error}
+			}
+			if result.ExitCode != 0 {
+				return &ToolResult{Success: false, Output: result.Output, Error: result.Error}
+			}
+			return &ToolResult{Success: true, Output: result.Output}
+		}
+
+		// Fallback: plain exec.Command (no sandbox)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 

@@ -33,6 +33,7 @@ type Options struct {
 	Temperature float64
 	MaxTokens   int
 	JSONMode    bool // If true, requires the LLM to output valid JSON
+	GearLevel   int  // Complexity level (1-4) used by Router to select the appropriate model tier
 }
 
 // EmbeddingOpts configuration for vector embedding generation.

@@ -110,7 +110,7 @@ func (a *Agent) handleReview(ctx context.Context, msg protocol.Message) {
 		return
 	}
 
-	cleanJSON := extractJSON(resp.Content)
+	cleanJSON := protocol.ExtractJSON(resp.Content)
 	var review protocol.ReviewPayload
 	if err := json.Unmarshal([]byte(cleanJSON), &review); err != nil {
 		logger.L().Warnw("Reviewer: failed to parse review", "error", err)
@@ -168,19 +168,4 @@ func (a *Agent) discoverGoFiles(dir string, depth, maxDepth int) []string {
 		}
 	}
 	return goFiles
-}
-
-func extractJSON(raw string) string {
-	s := strings.TrimSpace(raw)
-	if strings.HasPrefix(s, "```") {
-		idx := strings.Index(s, "\n")
-		if idx != -1 {
-			s = s[idx+1:]
-		}
-		if lastIdx := strings.LastIndex(s, "```"); lastIdx != -1 {
-			s = s[:lastIdx]
-		}
-		s = strings.TrimSpace(s)
-	}
-	return s
 }

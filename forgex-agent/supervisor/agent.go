@@ -105,7 +105,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 
 	var plan planResponse
-	cleanJSON := extractJSON(resp.Content)
+	cleanJSON := protocol.ExtractJSON(resp.Content)
 	if err := json.Unmarshal([]byte(cleanJSON), &plan); err != nil {
 		return fmt.Errorf("parse plan: %w (raw: %s)", err, cleanJSON[:min(len(cleanJSON), 300)])
 	}
@@ -210,6 +210,39 @@ func (a *Agent) Run(ctx context.Context) error {
 		return ctx.Err()
 	}
 
+	// Step 4.5: Dispatch code review request
+	pterm.DefaultSection.Println("📝 Supervisor: 请求 Reviewer 审查代码质量")
+	a.bus.Publish(ctx, protocol.Message{
+		Sender:   protocol.RoleSupervisor,
+		Receiver: protocol.RoleReviewer,
+		Type:     protocol.MsgReview,
+		Payload: protocol.TaskPayload{
+			TaskID:      "review-all",
+			Description: "Review all generated code files for quality and correctness",
+		},
+	})
+
+	// Wait for review result (3-minute timeout)
+	reviewTimeout := time.After(3 * time.Minute)
+	select {
+	case msg := <-a.inbox:
+		if msg.Type == protocol.MsgReview {
+			payloadJSON, _ := json.Marshal(msg.Payload)
+			var review protocol.ReviewPayload
+			if json.Unmarshal(payloadJSON, &review) == nil {
+				if review.Passed {
+					pterm.Success.Printf("📝 代码审查通过 (评分: %d/100)\n", review.Score)
+				} else {
+					pterm.Warning.Printf("📝 代码审查发现问题 (评分: %d/100): %s\n", review.Score, review.Feedback)
+				}
+			}
+		}
+	case <-reviewTimeout:
+		pterm.Warning.Println("📝 代码审查超时，跳过")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	// Step 5: Signal completion
 	fmt.Println()
 	var fileList []string
@@ -226,21 +259,6 @@ func (a *Agent) Run(ctx context.Context) error {
 	})
 
 	return nil
-}
-
-func extractJSON(raw string) string {
-	s := strings.TrimSpace(raw)
-	if strings.HasPrefix(s, "```") {
-		idx := strings.Index(s, "\n")
-		if idx != -1 {
-			s = s[idx+1:]
-		}
-		if lastIdx := strings.LastIndex(s, "```"); lastIdx != -1 {
-			s = s[:lastIdx]
-		}
-		s = strings.TrimSpace(s)
-	}
-	return s
 }
 
 func min(a, b int) int {

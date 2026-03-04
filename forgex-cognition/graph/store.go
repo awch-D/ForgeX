@@ -26,6 +26,9 @@ type Edge struct {
 	Properties map[string]string `json:"properties,omitempty"`
 }
 
+// DefaultMaxNodes is the default capacity of the graph store.
+const DefaultMaxNodes = 10000
+
 // Store holds the nodes and edges of the knowledge graph in memory.
 type Store struct {
 	mu    sync.RWMutex
@@ -36,18 +39,32 @@ type Store struct {
 
 	// inEdges: dstID -> list of edges ending at dstID
 	inEdges map[string][]*Edge
+
+	// Memory management
+	maxNodes    int            // 0 = unlimited
+	accessCount map[string]int // tracks access frequency per node
 }
 
-// NewStore creates a new graph store.
+// NewStore creates a new graph store with the default capacity.
 func NewStore() *Store {
+	return NewStoreWithCapacity(DefaultMaxNodes)
+}
+
+// NewStoreWithCapacity creates a new graph store with a specific node capacity.
+// When the number of nodes exceeds maxNodes, the least-accessed nodes are evicted.
+// Set maxNodes to 0 for unlimited capacity.
+func NewStoreWithCapacity(maxNodes int) *Store {
 	return &Store{
-		nodes:    make(map[string]*Node),
-		outEdges: make(map[string][]*Edge),
-		inEdges:  make(map[string][]*Edge),
+		nodes:       make(map[string]*Node),
+		outEdges:    make(map[string][]*Edge),
+		inEdges:     make(map[string][]*Edge),
+		maxNodes:    maxNodes,
+		accessCount: make(map[string]int),
 	}
 }
 
 // AddNode adds or updates a node in the graph.
+// If the store exceeds maxNodes capacity, the least-accessed node is evicted.
 func (s *Store) AddNode(node *Node) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -55,15 +72,84 @@ func (s *Store) AddNode(node *Node) {
 	if node.Properties == nil {
 		node.Properties = make(map[string]string)
 	}
+
+	// If this is a new node and we're at capacity, evict
+	if _, exists := s.nodes[node.ID]; !exists && s.maxNodes > 0 && len(s.nodes) >= s.maxNodes {
+		s.evictLeastAccessed()
+	}
+
 	s.nodes[node.ID] = node
+	// Initialize access count for new nodes
+	if _, ok := s.accessCount[node.ID]; !ok {
+		s.accessCount[node.ID] = 0
+	}
 }
 
-// GetNode retrieves a node by its ID.
+// GetNode retrieves a node by its ID and increments its access count.
 func (s *Store) GetNode(id string) (*Node, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	node, exists := s.nodes[id]
+	if exists {
+		s.accessCount[id]++
+	}
+	return node, exists
+}
+
+// NodeCount returns the current number of nodes in the store.
+func (s *Store) NodeCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	node, exists := s.nodes[id]
-	return node, exists
+	return len(s.nodes)
+}
+
+// evictLeastAccessed removes the node with the lowest access count
+// along with all its associated edges. Must be called with mu held.
+func (s *Store) evictLeastAccessed() {
+	if len(s.nodes) == 0 {
+		return
+	}
+
+	// Find the node with the minimum access count
+	var victimID string
+	minCount := int(^uint(0) >> 1) // max int
+	for id, count := range s.accessCount {
+		if count < minCount {
+			minCount = count
+			victimID = id
+		}
+	}
+
+	if victimID == "" {
+		return
+	}
+
+	// Remove victim's outgoing edges from inEdges of their targets
+	for _, edge := range s.outEdges[victimID] {
+		filtered := make([]*Edge, 0)
+		for _, e := range s.inEdges[edge.DstID] {
+			if e.SrcID != victimID {
+				filtered = append(filtered, e)
+			}
+		}
+		s.inEdges[edge.DstID] = filtered
+	}
+
+	// Remove victim's incoming edges from outEdges of their sources
+	for _, edge := range s.inEdges[victimID] {
+		filtered := make([]*Edge, 0)
+		for _, e := range s.outEdges[edge.SrcID] {
+			if e.DstID != victimID {
+				filtered = append(filtered, e)
+			}
+		}
+		s.outEdges[edge.SrcID] = filtered
+	}
+
+	delete(s.outEdges, victimID)
+	delete(s.inEdges, victimID)
+	delete(s.nodes, victimID)
+	delete(s.accessCount, victimID)
 }
 
 // AddEdge adds a directed edge from SrcID to DstID.

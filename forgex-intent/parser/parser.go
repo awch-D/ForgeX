@@ -4,7 +4,6 @@ package parser
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	fxerr "github.com/awch-D/ForgeX/forgex-core/errors"
@@ -14,13 +13,13 @@ import (
 
 // TaskAnalysis represents the structured output from the LLM.
 type TaskAnalysis struct {
-	Status          string          `json:"status"` // "ready" or "need_info"
-	CoreIntent      string          `json:"core_intent"`
-	TechStack       []string        `json:"tech_stack"`
-	EstimatedLevel  types.TaskLevel `json:"estimated_level"`
-	MissingContext  []string        `json:"missing_context"` // Questions to ask user
-	ExecutionPlan   []string        `json:"execution_plan"`
-	FilesToModify   []string        `json:"files_to_modify"`
+	Status         string          `json:"status"` // "ready" or "need_info"
+	CoreIntent     string          `json:"core_intent"`
+	TechStack      []string        `json:"tech_stack"`
+	EstimatedLevel types.TaskLevel `json:"estimated_level"`
+	MissingContext []string        `json:"missing_context"` // Questions to ask user
+	ExecutionPlan  []string        `json:"execution_plan"`
+	FilesToModify  []string        `json:"files_to_modify"`
 }
 
 var systemPrompt = `You are the ForgeX Intent Clarifier v3.
@@ -50,22 +49,32 @@ func extractJSON(raw string) string {
 
 	// Strip ```json ... ``` or ``` ... ```
 	if strings.HasPrefix(s, "```") {
-		// Find end of first line (the opening fence)
 		idx := strings.Index(s, "\n")
 		if idx != -1 {
 			s = s[idx+1:]
 		}
-		// Strip trailing ```
 		if lastIdx := strings.LastIndex(s, "```"); lastIdx != -1 {
 			s = s[:lastIdx]
 		}
 		s = strings.TrimSpace(s)
 	}
 
+	// Try to find JSON object boundaries if raw text surrounds it
+	if start := strings.Index(s, "{"); start > 0 {
+		s = s[start:]
+	}
+	if end := strings.LastIndex(s, "}"); end >= 0 && end < len(s)-1 {
+		s = s[:end+1]
+	}
+
 	return s
 }
 
 // Parse parses the current conversation history to produce a TaskAnalysis.
+// It includes retry and graceful degradation:
+//   - First attempt: parse LLM response as JSON
+//   - Retry: re-prompt LLM with explicit JSON instruction
+//   - Fallback: build a minimal TaskAnalysis from the raw prompt
 func Parse(ctx context.Context, llm provider.Provider, history []provider.Message) (*TaskAnalysis, error) {
 	messages := []provider.Message{
 		{Role: provider.RoleSystem, Content: systemPrompt},
@@ -77,6 +86,7 @@ func Parse(ctx context.Context, llm provider.Provider, history []provider.Messag
 		JSONMode:    true,
 	}
 
+	// Attempt 1: normal parse
 	resp, err := llm.Generate(ctx, messages, opts)
 	if err != nil {
 		return nil, fxerr.Wrap(fxerr.ErrLLMBadResponse, "intent parsing failed", err)
@@ -85,10 +95,36 @@ func Parse(ctx context.Context, llm provider.Provider, history []provider.Messag
 	cleanJSON := extractJSON(resp.Content)
 
 	var analysis TaskAnalysis
-	if err := json.Unmarshal([]byte(cleanJSON), &analysis); err != nil {
-		return nil, fxerr.Wrap(fxerr.ErrLLMBadResponse, fmt.Sprintf("failed to decode JSON from LLM: %s", cleanJSON), err)
+	if err := json.Unmarshal([]byte(cleanJSON), &analysis); err == nil {
+		return &analysis, nil
 	}
 
-	return &analysis, nil
-}
+	// Attempt 2: retry with explicit instruction
+	retryMsgs := append(messages, provider.Message{
+		Role:    provider.RoleUser,
+		Content: "Your previous response was not valid JSON. Please respond with ONLY a raw JSON object matching the schema. Do not use markdown code blocks.",
+	})
+	resp2, err2 := llm.Generate(ctx, retryMsgs, opts)
+	if err2 == nil {
+		cleanJSON2 := extractJSON(resp2.Content)
+		if err := json.Unmarshal([]byte(cleanJSON2), &analysis); err == nil {
+			return &analysis, nil
+		}
+	}
 
+	// Fallback: build minimal analysis from the raw user prompt
+	var userPrompt string
+	for _, m := range history {
+		if m.Role == provider.RoleUser {
+			userPrompt = m.Content
+		}
+	}
+	fallback := &TaskAnalysis{
+		Status:         "ready",
+		CoreIntent:     userPrompt,
+		TechStack:      []string{},
+		EstimatedLevel: 2,
+		ExecutionPlan:  []string{"Implement the requested feature"},
+	}
+	return fallback, nil
+}

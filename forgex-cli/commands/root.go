@@ -11,6 +11,7 @@ import (
 	"github.com/awch-D/ForgeX/forgex-agent/coder"
 	"github.com/awch-D/ForgeX/forgex-agent/pool"
 	"github.com/awch-D/ForgeX/forgex-agent/protocol"
+	"github.com/awch-D/ForgeX/forgex-agent/reviewer"
 	"github.com/awch-D/ForgeX/forgex-agent/supervisor"
 	"github.com/awch-D/ForgeX/forgex-agent/tester"
 	"github.com/awch-D/ForgeX/forgex-cli/display"
@@ -19,6 +20,9 @@ import (
 	"github.com/awch-D/ForgeX/forgex-core/logger"
 	evolution "github.com/awch-D/ForgeX/forgex-evolution"
 	gear "github.com/awch-D/ForgeX/forgex-gear"
+	"github.com/awch-D/ForgeX/forgex-governance/audit"
+	"github.com/awch-D/ForgeX/forgex-governance/budget"
+	"github.com/awch-D/ForgeX/forgex-governance/safety"
 	"github.com/awch-D/ForgeX/forgex-intent/archaeology"
 	"github.com/awch-D/ForgeX/forgex-intent/clarifier"
 	"github.com/awch-D/ForgeX/forgex-intent/confirmation"
@@ -27,9 +31,13 @@ import (
 	"github.com/awch-D/ForgeX/forgex-llm/provider"
 	"github.com/awch-D/ForgeX/forgex-llm/router"
 	"github.com/awch-D/ForgeX/forgex-mcp/tools"
+	localsandbox "github.com/awch-D/ForgeX/forgex-sandbox/local"
 )
 
-const version = "0.3.0-alpha"
+// version can be overridden at build time via ldflags:
+//
+//	go build -ldflags "-X commands.version=$(git describe --tags)"
+var version = "0.3.0-alpha"
 
 func showBanner() {
 	pterm.DefaultBigText.WithLetters(
@@ -74,11 +82,15 @@ var versionCmd = &cobra.Command{
 
 // Flags
 var (
-	outputDir string
+	outputDir    string
+	dryRun       bool
+	gearOverride int
 )
 
 func init() {
 	runCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory (default: ./forgex-output)")
+	runCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Only parse intent and evaluate gear level, don't execute agents")
+	runCmd.Flags().IntVar(&gearOverride, "gear-level", 0, "Manually override gear level (1-4), bypassing automatic evaluation")
 }
 
 var runCmd = &cobra.Command{
@@ -137,10 +149,53 @@ var runCmd = &cobra.Command{
 		// Create tool registry
 		registry := tools.NewRegistry(absWorkDir)
 
+		// ===== Governance Setup =====
+
+		// 1. Audit Logger: record all tool invocations to SQLite
+		auditDir := filepath.Join(absWorkDir, ".forgex")
+		os.MkdirAll(auditDir, 0755)
+		auditLogger, err := audit.NewLogger(filepath.Join(auditDir, "audit.db"))
+		if err != nil {
+			logger.L().Warnw("Failed to initialize audit logger, continuing without audit", "error", err)
+		} else {
+			defer auditLogger.Close()
+			registry.SetAuditLogger(auditLogger)
+			pterm.Info.Println("📋 审计日志已启用")
+		}
+
+		// 2. Safety auto-approve level from config
+		approveLevel := safety.ParseLevel(cfg.Governance.AutoApproveLevel)
+		registry.SetAutoApproveLevel(approveLevel)
+
+		// 3. Sandbox executor: process group isolation + memory limits
+		executor := localsandbox.New(cfg.Sandbox.TimeoutSec, cfg.Sandbox.MemoryMB)
+		registry.SetExecutor(executor)
+
+		// 4. Budget guard: enforce cost ceiling
+		guard := budget.NewGuard(cfg.Governance.MaxBudget, cost.Global())
+		pterm.Info.Printf("💰 预算上限: $%.2f\n", cfg.Governance.MaxBudget)
+
 		// Gear Evaluation: decide execution strategy
 		fmt.Println()
 		level := gear.Evaluate(analysis)
-		pterm.Info.Printf("⚙️ 任务评级: %s\n", level.String())
+
+		// Allow manual gear level override via CLI flag
+		if gearOverride >= 1 && gearOverride <= 4 {
+			level = gear.Level(gearOverride)
+			pterm.Info.Printf("⚙️ 任务评级: %s (手动覆盖)\n", level.String())
+		} else {
+			pterm.Info.Printf("⚙️ 任务评级: %s\n", level.String())
+		}
+
+		// Dry-run mode: output analysis results and exit without executing agents
+		if dryRun {
+			pterm.Success.Println("🔍 Dry-run 完成，已跳过 Agent 执行")
+			display.PrintCostSummary()
+			return
+		}
+
+		// Wrap provider with gear level so Router can apply gear-aware model selection.
+		gearProvider := provider.WithGear(llmProvider, int(level))
 
 		// Setup event bus
 		eventBus := protocol.NewEventBus()
@@ -159,6 +214,12 @@ var runCmd = &cobra.Command{
 		// Analyze recent 100 commits to find hot spots and implicit dependencies
 		_ = gitAnalyzer.Analyze(ctx, absWorkDir, 100)
 
+		// Budget check before agent execution
+		if err := guard.Check(); err != nil {
+			pterm.Error.Printf("💰 %v\n", err)
+			return
+		}
+
 		if level.NeedsMultiAgent() {
 			// ===== Phase 3: Multi-Agent Mode =====
 			pterm.DefaultSection.Println("🚀 多 Agent 协作模式")
@@ -167,13 +228,15 @@ var runCmd = &cobra.Command{
 			agentPool := pool.NewPool(eventBus)
 
 			// Register agents
-			sup := supervisor.New(llmProvider, eventBus, analysis, graphStore)
-			coderAgent := coder.NewWithBus(llmProvider, registry, eventBus, graphStore)
+			sup := supervisor.New(gearProvider, eventBus, analysis, graphStore)
+			coderAgent := coder.NewWithBus(gearProvider, registry, eventBus, graphStore)
 			testerAgent := tester.New(eventBus, registry)
+			reviewerAgent := reviewer.New(gearProvider, eventBus, registry)
 
 			agentPool.Register(sup)
 			agentPool.Register(coderAgent)
 			agentPool.Register(testerAgent)
+			agentPool.Register(reviewerAgent)
 
 			// Start all agents
 			agentPool.Start(ctx)
@@ -188,24 +251,64 @@ var runCmd = &cobra.Command{
 			pterm.DefaultSection.Println("🚀 单 Agent 模式")
 			pterm.Info.Printf("📂 代码输出目录: %s\n\n", absWorkDir)
 
-			agent := coder.NewWithBus(llmProvider, registry, eventBus, graphStore)
+			agent := coder.NewWithBus(gearProvider, registry, eventBus, graphStore)
 			if err := agent.RunStandalone(ctx, analysis); err != nil {
 				logger.L().Fatalw("Coder Agent failed", "error", err)
 			}
 		}
 
-		// Evolution: evaluate code quality
+		// Evolution: evaluate code quality with retry loop
 		evolver := evolution.NewEvolver()
 		pterm.DefaultSection.Println("📊 进化引擎: 评估代码质量")
-		evoScore := evolver.Evaluate(absWorkDir)
-		if evolver.ShouldRetry(evoScore) {
-			pterm.Warning.Printf("⚠️ 代码质量评分: %.0f%% (低于阈值)\n", evoScore.Total*100)
-			pterm.Info.Println("💡 建议: 重新运行 forgex run 以获得更好的结果")
-		} else {
-			pterm.Success.Printf("✅ 代码质量评分: %.0f%%\n", evoScore.Total*100)
+
+		for attempt := 0; attempt <= evolver.MaxRetries; attempt++ {
+			evoScore := evolver.Evaluate(absWorkDir)
+
+			if !evolver.ShouldRetry(evoScore) {
+				pterm.Success.Printf("✅ 代码质量评分: %.0f%%\n", evoScore.Total*100)
+				break
+			}
+
+			if attempt == evolver.MaxRetries {
+				pterm.Warning.Printf("⚠️ 已达最大重试次数，最终评分: %.0f%%\n", evoScore.Total*100)
+				break
+			}
+
+			// Budget check before retry
+			if err := guard.Check(); err != nil {
+				pterm.Warning.Printf("💰 预算已耗尽，停止重试: %v\n", err)
+				break
+			}
+
+			// Auto-retry: inject error context and re-run the Coder Agent.
+			retryPrompt := evolver.BuildRetryPrompt(evoScore)
+			pterm.Warning.Printf("⚠️ 评分 %.0f%% 低于阈值，第 %d 次自动修复中...\n", evoScore.Total*100, attempt+1)
+			logger.L().Warnw("Evolution retry triggered",
+				"attempt", attempt+1,
+				"score", evoScore.Total,
+				"compile_pass", evoScore.CompilePass,
+			)
+
+			// Clone analysis and inject error context as the new intent.
+			retryAnalysis := *analysis
+			retryAnalysis.CoreIntent = retryPrompt
+
+			retryAgent := coder.NewWithBus(gearProvider, registry, eventBus, graphStore)
+			if err := retryAgent.RunStandalone(ctx, &retryAnalysis); err != nil {
+				logger.L().Warnw("Evolution retry coder failed", "attempt", attempt+1, "error", err)
+			}
 		}
 
-		// Final cost summary
+		// Final cost and budget summary
 		display.PrintCostSummary()
+		pterm.Info.Printf("💰 剩余预算: $%.4f\n", guard.Remaining())
+
+		// Audit summary
+		if auditLogger != nil {
+			if stats, err := auditLogger.Stats(); err == nil {
+				pterm.Info.Printf("📋 审计统计: 共 %d 次工具调用, %d 次成功, %d 次被阻止\n",
+					stats.Total, stats.Approved, stats.Blocked)
+			}
+		}
 	},
 }

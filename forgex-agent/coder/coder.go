@@ -172,7 +172,7 @@ func (a *Agent) execute(ctx context.Context, taskPrompt string) (filesCreated []
 
 		spinner.Success(fmt.Sprintf("%s Coder 响应就绪", iterLabel))
 
-		cleanJSON := extractJSON(resp.Content)
+		cleanJSON := protocol.ExtractJSON(resp.Content)
 		var agentResp agentResponse
 		if err := json.Unmarshal([]byte(cleanJSON), &agentResp); err != nil {
 			logger.L().Warnw("Failed to parse agent response, retrying",
@@ -241,21 +241,6 @@ func (a *Agent) execute(ctx context.Context, taskPrompt string) (filesCreated []
 	}
 
 	return nil, "", fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
-}
-
-func extractJSON(raw string) string {
-	s := strings.TrimSpace(raw)
-	if strings.HasPrefix(s, "```") {
-		idx := strings.Index(s, "\n")
-		if idx != -1 {
-			s = s[idx+1:]
-		}
-		if lastIdx := strings.LastIndex(s, "```"); lastIdx != -1 {
-			s = s[:lastIdx]
-		}
-		s = strings.TrimSpace(s)
-	}
-	return s
 }
 
 func min(a, b int) int {

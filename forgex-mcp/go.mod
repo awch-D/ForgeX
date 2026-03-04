@@ -8,9 +8,11 @@ require github.com/mattn/go-sqlite3 v1.14.34 // indirect
 
 require (
 	github.com/awch-D/ForgeX/forgex-governance v0.0.0
-	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/awch-D/ForgeX/forgex-sandbox v0.0.0
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 )
 
 replace github.com/awch-D/ForgeX/forgex-governance => ../forgex-governance
+
+replace github.com/awch-D/ForgeX/forgex-sandbox => ../forgex-sandbox
